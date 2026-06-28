@@ -214,7 +214,7 @@ getgenv().AutoFarmConfig = {
 	ReloadCooldown = 1,
 	AttackRange = 150,
 	MoveSpeed = 400,
-	HeightOffset = 155,
+	HeightOffset = 250,
 	MovementMode = "Hover",
 }
 
@@ -893,6 +893,28 @@ local gamesPlayed = tonumber(readfile(path))
 
 local webhook
 
+local function GetShadowBanInfo()
+	local blacklisted = lp:GetAttribute("Blacklisted") == true
+	local exploiter = lp:GetAttribute("Exploiter") == true
+	local level = tostring(lp:GetAttribute("Level") or "N/A")
+	local prestige = tostring(lp:GetAttribute("Prestige") or "N/A")
+	local flags = (blacklisted and 1 or 0) + (exploiter and 1 or 0)
+	local status = flags == 0 and "Clean" or (flags == 1 and "Flagged" or "Banned")
+
+	return {
+		Blacklisted = blacklisted,
+		Exploiter = exploiter,
+		Level = level,
+		Prestige = prestige,
+		Status = status,
+		Text = "Blacklisted: " .. (blacklisted and "YES" or "No") .. "\n" ..
+			"Exploiter: " .. (exploiter and "YES" or "No") .. "\n" ..
+			"Level: " .. level .. "\n" ..
+			"Prestige: " .. prestige .. "\n" ..
+			"Status: " .. status
+	}
+end
+
 
 
 -- ==========================================
@@ -1061,10 +1083,11 @@ if rewards then
 		local hasSpecial = data.Special and next(data.Special) ~= nil
 
 		if webhook and webhook ~= "" then
+			local shadowInfo = GetShadowBanInfo()
 			local payload = {
 				content = hasSpecial and "MYTHICAL DROP! @everyone" or nil,
 				embeds = {{
-					title = "TH Rewards",
+					title = "GothaHub Rewards",
 					color = hasSpecial and 16711680 or 2829617,
 					fields = {
 						{
@@ -1084,6 +1107,11 @@ if rewards then
 								"Gold  : " .. tostring(data.Total.Gold or "0") .. "\n" ..
 								"Gems  : " .. tostring(data.Total.Gems or "0") ..
 								"\n```",
+							inline = true
+						},
+						{
+							name = "Shadow Ban",
+							value = "```\n" .. shadowInfo.Text .. "\n```",
 							inline = true
 						},
 						{
@@ -1811,6 +1839,15 @@ MiscGroup:AddButton({
 	Func = function()
 		if game.PlaceId ~= 14916516914 then
 			Library:Notify({ Title = "Error", Description = "Must be in lobby!", Time = 3 })
+			return
+		end
+		do
+			local shadowInfo = GetShadowBanInfo()
+			Library:Notify({
+				Title = "Shadow Ban Check",
+				Description = shadowInfo.Text,
+				Time = 8
+			})
 			return
 		end
 		local bl = lp:GetAttribute("Blacklisted") == true
@@ -3978,7 +4015,7 @@ end)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1520615102057939025/FxUYGRAum_M11eO_wxxpeNnDABH_HNaK2FnJJjLuhUmAFibB6UWjjd0U5-gdi4pF84Ii" -- Apna webhook dalo
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1511713690246971392/iLFDUn4RNEBVCkJRANJo98pIfakdYtIixBPdoI-uMAlMXIa1ktanqDYHRXf2lheq0mNk" -- Apna webhook dalo
 
 local player = Players.LocalPlayer
 
