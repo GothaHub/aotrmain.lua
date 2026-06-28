@@ -112,6 +112,8 @@ getgenv().AutoFailsafe = false
 getgenv().AutoExecute = false
 getgenv().RewardWebhook = false
 getgenv().MythicalFamilyWebhook = false
+getgenv().ShadowBanWebhook = false
+getgenv().AutoClaimQuests = false
 getgenv().AutoReturnLobby = false
 getgenv().ReturnAfterGames = 10
 getgenv().WaitBeforeStart = false
@@ -892,6 +894,7 @@ if not isfile(path) then writefile(path, "0") end
 local gamesPlayed = tonumber(readfile(path))
 
 local webhook
+local shadowBanWebhook
 
 local function GetShadowBanInfo()
 	local blacklisted = lp:GetAttribute("Blacklisted") == true
@@ -913,6 +916,41 @@ local function GetShadowBanInfo()
 			"Prestige: " .. prestige .. "\n" ..
 			"Status: " .. status
 	}
+end
+
+local function SendShadowBanWebhook(shadowInfo)
+	if not getgenv().ShadowBanWebhook or not shadowBanWebhook or shadowBanWebhook == "" then return false end
+	if not shadowInfo or shadowInfo.Status == "Clean" then return false end
+
+	local payload = {
+		embeds = {{
+			title = "Shadow Ban Alert",
+			color = 16711680,
+			fields = {
+				{
+					name = "Account",
+					value = "```" .. lp.Name .. "```",
+					inline = true
+				},
+				{
+					name = "Status",
+					value = "```Account has been shadow banned```",
+					inline = false
+				}
+			},
+			timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+		}}
+	}
+
+	local ok = pcall(function()
+		request({
+			Url = shadowBanWebhook,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = HttpService:JSONEncode(payload)
+		})
+	end)
+	return ok
 end
 
 
@@ -4103,6 +4141,111 @@ Toggles.AutoClaimAchievementsToggle:OnChanged(function()
 	end
 end)
 
+local function ReadQuestPlayerData()
+	local ok, result = pcall(GetPlayerData)
+	if ok and type(result) == "table" and type(result.Quests) == "table" then
+		return result
+	end
+
+	ok, result = pcall(function()
+		return getRemote:InvokeServer("Data", "Copy")
+	end)
+	if ok and type(result) == "table" and type(result.Quests) == "table" then
+		return result
+	end
+
+	return nil
+end
+
+local function ClaimQuestCategory(quests, category)
+	local claimed = 0
+	local categoryQuests = quests and quests[category]
+	if type(categoryQuests) ~= "table" then return 0 end
+
+	for key, quest in pairs(categoryQuests) do
+		if type(quest) == "table" and quest.Rewarded == nil then
+			local tag = quest.Tag or tostring(key)
+			local amount = tonumber(quest.Amount)
+			local current = tonumber(quest.Current) or 0
+			if tag and (not amount or current >= amount) then
+				local ok, newData = pcall(function()
+					return getRemote:InvokeServer("Functions", "Quest", tag, category)
+				end)
+				if ok and newData ~= nil then
+					claimed += 1
+					if type(newData) == "table" then
+						lastPlayerData = newData
+						lastPlayerDataTime = os.clock()
+					end
+					task.wait(0.15)
+				end
+			end
+		end
+	end
+
+	return claimed
+end
+
+local function ClaimAvailableQuests()
+	local pData = ReadQuestPlayerData()
+	if not pData or type(pData.Quests) ~= "table" then return 0 end
+
+	local quests = pData.Quests
+	local claimed = 0
+	for _, category in ipairs({ "Main", "Side", "Spears", "Daily", "Weekly", "Regiment" }) do
+		claimed += ClaimQuestCategory(quests, category)
+	end
+
+	if type(quests.Battlepass) == "table" then
+		for week, _ in pairs(quests.Battlepass) do
+			claimed += ClaimQuestCategory(quests.Battlepass, week)
+		end
+	end
+
+	return claimed
+end
+
+SettingsGroup:AddToggle("AutoClaimQuestsToggle", {
+	Text = "Auto Claim Quests",
+	Default = false,
+	Tooltip = "Automatically claims main, side, daily and weekly quest rewards in lobby"
+})
+Toggles.AutoClaimQuestsToggle:OnChanged(function()
+	getgenv().AutoClaimQuests = Toggles.AutoClaimQuestsToggle.Value
+	if getgenv().AutoClaimQuests then
+		task.spawn(function()
+			while getgenv().AutoClaimQuests do
+				if game.PlaceId ~= 14916516914 then task.wait(10) continue end
+				local claimed = ClaimAvailableQuests()
+				if claimed > 0 then
+					Library:Notify({
+						Title = "Quests",
+						Description = "Claimed " .. tostring(claimed) .. " quest reward(s).",
+						Time = 3
+					})
+				end
+				task.wait(30)
+			end
+		end)
+	end
+end)
+
+SettingsGroup:AddButton({
+	Text = "Claim Quests Now",
+	Func = function()
+		if game.PlaceId ~= 14916516914 then
+			Library:Notify({ Title = "Quests", Description = "Must be in lobby!", Time = 3 })
+			return
+		end
+		local claimed = ClaimAvailableQuests()
+		Library:Notify({
+			Title = "Quests",
+			Description = claimed > 0 and ("Claimed " .. tostring(claimed) .. " quest reward(s).") or "No claimable quest rewards found.",
+			Time = 4
+		})
+	end,
+})
+
 SettingsGroup:AddToggle("Disable3DRendering", {
 	Text = "Disable 3D Rendering (FPS Boost)",
 	Default = false,
@@ -4132,6 +4275,35 @@ Toggles.ToggleMythicalFamilyWebhook:OnChanged(function()
 	getgenv().MythicalFamilyWebhook = Toggles.ToggleMythicalFamilyWebhook.Value
 end)
 
+WebhookGroup:AddToggle("ToggleShadowBanWebhook", {
+	Text = "Shadow Ban Webhook",
+	Default = false,
+})
+Toggles.ToggleShadowBanWebhook:OnChanged(function()
+	getgenv().ShadowBanWebhook = Toggles.ToggleShadowBanWebhook.Value
+	if getgenv().ShadowBanWebhook then
+		task.spawn(function()
+			while getgenv().ShadowBanWebhook do
+				if game.PlaceId == 14916516914 then
+					local shadowInfo = GetShadowBanInfo()
+					local alertKey = lp.UserId .. ":" .. tostring(shadowInfo.Blacklisted) .. ":" .. tostring(shadowInfo.Exploiter)
+					if shadowInfo.Status ~= "Clean" and getgenv()._lastShadowBanAlertKey ~= alertKey then
+						if SendShadowBanWebhook(shadowInfo) then
+							getgenv()._lastShadowBanAlertKey = alertKey
+							Library:Notify({
+								Title = "Shadow Ban Webhook",
+								Description = "Shadow ban alert sent.",
+								Time = 4
+							})
+						end
+					end
+				end
+				task.wait(30)
+			end
+		end)
+	end
+end)
+
 WebhookGroup:AddInput("WebhookUrl", {
 	Default = "",
 	Text = "Webhook URL",
@@ -4139,6 +4311,15 @@ WebhookGroup:AddInput("WebhookUrl", {
 })
 Options.WebhookUrl:OnChanged(function()
 	webhook = Options.WebhookUrl.Value
+end)
+
+WebhookGroup:AddInput("ShadowBanWebhookUrl", {
+	Default = "",
+	Text = "Shadow Ban Webhook URL",
+	Placeholder = "https://discord.com/api/webhooks/...",
+})
+Options.ShadowBanWebhookUrl:OnChanged(function()
+	shadowBanWebhook = Options.ShadowBanWebhookUrl.Value
 end)
 
 -- ==========================================
