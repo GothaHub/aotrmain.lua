@@ -1446,6 +1446,14 @@ end
 if getgenv().AutoRetry then
         local rewardsGui = INTERFACE:FindFirstChild("Rewards")
         if rewardsGui and rewardsGui.Visible then
+            if getgenv()._autoRetryHandling then return end
+            getgenv()._autoRetryHandling = true
+            task.wait(2)
+            if not getgenv().AutoRetry or not rewardsGui.Parent or not rewardsGui.Visible then
+                getgenv()._autoRetryHandling = false
+                return
+            end
+
             -- Method 1: Direct button path
             local retryBtn = rewardsGui:FindFirstChild("Main")
                 and rewardsGui.Main:FindFirstChild("Info")
@@ -1494,6 +1502,35 @@ if getgenv().AutoRetry then
                 end)
             end
 
+            local function fallbackToLobbyIfStuck()
+                task.spawn(function()
+                    local started = os.clock()
+                    repeat
+                        task.wait(1)
+                    until not getgenv().AutoRetry
+                        or not rewardsGui.Parent
+                        or not rewardsGui.Visible
+                        or (os.clock() - started) >= 40
+
+                    if getgenv().AutoRetry and rewardsGui.Parent and rewardsGui.Visible then
+                        Library:Notify({
+                            Title = "Auto Retry",
+                            Description = "Mission did not restart in 40s. Returning to lobby...",
+                            Time = 5
+                        })
+                        pcall(function()
+                            getRemote:InvokeServer("Functions", "Teleport", "Lobby")
+                        end)
+                        task.wait(0.5)
+                        pcall(function()
+                            TeleportService:Teleport(14916516914, lp)
+                        end)
+                    end
+
+                    getgenv()._autoRetryHandling = false
+                end)
+            end
+
             -- Method 3: Click via VirtualInputManager directly
             if retryBtn and retryBtn.Visible and retryBtn.Active then
                 -- Wait a bit for UI to fully load
@@ -1530,12 +1567,16 @@ if getgenv().AutoRetry then
                         tryRetryRemote()
                     end
                     startRetriedMission()
+                    fallbackToLobbyIfStuck()
+                else
+                    getgenv()._autoRetryHandling = false
                 end
             else
                 -- Button not found or not active, force refresh
                 print("Retry button not ready, waiting...")
                 tryRetryRemote()
                 startRetriedMission()
+                fallbackToLobbyIfStuck()
                 task.wait(0.5)
             end
         end
@@ -3753,6 +3794,21 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 				return pData.Slots[slotIdx] or pData.Slots[tostring(slotIdx)], slotIdx
 			end
 
+			local function getPrestigeGoldRequirement(currentPrestige)
+				local optionNames = {
+					[0] = "P1GoldInput",
+					[1] = "P2GoldInput",
+					[2] = "P3GoldInput",
+					[3] = "P4GoldInput",
+					[4] = "P5GoldInput",
+				}
+				local optionName = optionNames[tonumber(currentPrestige) or 0]
+				local option = optionName and Options[optionName]
+				local raw = option and tostring(option.Value or "") or "0"
+				raw = raw:gsub("[,%s]", "")
+				return tonumber(raw) or 0
+			end
+
 			local function pickBestPrestigeTalent(nextTalents)
 				local best = nil
 				for _, id in ipairs(nextTalents or {}) do
@@ -3765,36 +3821,55 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 			end
 
 			local function extractNextTalents(dataResult, talentsResult)
-				if type(talentsResult) == "table" then return talentsResult end
 				if type(dataResult) == "table" then
 					if type(dataResult.Next_Talents) == "table" then return dataResult.Next_Talents end
 					if type(dataResult.NextTalents) == "table" then return dataResult.NextTalents end
 				end
+				if type(talentsResult) == "table" then return talentsResult end
 				return nil
+			end
+
+			local function returnLobbyAfterPrestige()
+				Library:Notify({ Title = "Auto Prestige", Description = "Refreshing lobby after prestige...", Time = 4 })
+				task.wait(2)
+				pcall(function()
+					getRemote:InvokeServer("Functions", "Teleport", "Lobby")
+				end)
+				task.wait(0.5)
+				pcall(function()
+					TeleportService:Teleport(14916516914, lp)
+				end)
 			end
 
 			local lastNotice = 0
 			while getgenv().AutoPrestige do
-				lastPlayerDataTime = 0
-				lastPlayerData = nil
-				local okData, pData = pcall(GetPlayerData)
-				local slotData, slotIdx = okData and getSlotData(pData) or nil, nil
-				if okData then
-					slotData, slotIdx = getSlotData(pData)
+				local okTalents, dataResult, nextTalents, itemCount = pcall(function()
+					return getRemote:InvokeServer("S_Equipment", "Talents")
+				end)
+
+				if not okTalents then
+					Library:Notify({ Title = "Auto Prestige", Description = "Could not get prestige talents.", Time = 3 })
+					task.wait(5)
+					continue
 				end
 
-				if not slotIdx then
+				if type(dataResult) ~= "table" then
+					Library:Notify({ Title = "Auto Prestige", Description = "Talent request did not return player data.", Time = 3 })
+					task.wait(5)
+					continue
+				end
+
+				lastPlayerData = dataResult
+				lastPlayerDataTime = os.clock()
+
+				local slotData, slotIdx = getSlotData(dataResult)
+				if not slotData or not slotIdx then
 					pcall(function() getRemote:InvokeServer("Functions", "Select", "A") end)
 					local waited = 0
 					repeat
 						task.wait(0.5)
 						waited += 0.5
 					until lp:GetAttribute("Slot") or waited >= 5 or not getgenv().AutoPrestige
-					task.wait(1)
-					continue
-				end
-
-				if not slotData then
 					if os.clock() - lastNotice > 10 then
 						lastNotice = os.clock()
 						Library:Notify({ Title = "Auto Prestige", Description = "Slot data not ready yet.", Time = 3 })
@@ -3806,7 +3881,8 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 				local currency = slotData.Currency or {}
 				local progression = slotData.Progression or {}
 				local gold = currency.Gold or 0
-				local requiredGold = Options.PrestigeGoldSlider.Value * 1000000
+				local currentPrestige = tonumber(progression.Prestige or lp:GetAttribute("Prestige") or 0) or 0
+				local requiredGold = getPrestigeGoldRequirement(currentPrestige)
 
 				if gold < requiredGold then
 					if os.clock() - lastNotice > 30 then
@@ -3821,14 +3897,16 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 					continue
 				end
 
-				local currentPrestige = progression.Prestige or lp:GetAttribute("Prestige") or 0
 				local requiredLevel = 100 + currentPrestige * 25
-				if (progression.Level or 0) < requiredLevel then
+				local level = progression.Level or 0
+				local xp = progression.XP or 0
+				local maxXP = progression.Max_XP or 0
+				if level < requiredLevel or xp < maxXP then
 					if os.clock() - lastNotice > 30 then
 						lastNotice = os.clock()
 						Library:Notify({
 							Title = "Auto Prestige",
-							Description = "Waiting for level: " .. tostring(progression.Level or 0) .. " / " .. tostring(requiredLevel),
+							Description = "Waiting for max level/XP: Lv " .. tostring(level) .. "/" .. tostring(requiredLevel) .. ", XP " .. tostring(xp) .. "/" .. tostring(maxXP),
 							Time = 4
 						})
 					end
@@ -3836,26 +3914,11 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 					continue
 				end
 
-				local okTalents, dataResult, nextTalents = pcall(function()
-					return getRemote:InvokeServer("S_Equipment", "Talents")
-				end)
-
-				if not okTalents then
-					Library:Notify({ Title = "Auto Prestige", Description = "Could not get prestige talents.", Time = 3 })
-					task.wait(5)
-					continue
-				end
-
-				if type(dataResult) == "table" and dataResult.Slots then
-					lastPlayerData = dataResult
-					lastPlayerDataTime = os.clock()
-				end
-
 				nextTalents = extractNextTalents(dataResult, nextTalents)
 				local selectedTalent = pickBestPrestigeTalent(nextTalents)
 
 				if not selectedTalent then
-					Library:Notify({ Title = "Auto Prestige", Description = "No valid talent options returned.", Time = 3 })
+					Library:Notify({ Title = "Auto Prestige", Description = "No valid talent options returned. Count: " .. tostring(itemCount), Time = 3 })
 					task.wait(10)
 					continue
 				end
@@ -3879,12 +3942,17 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 				if okPrestige and newData ~= nil and skillPoints ~= nil and newPrestige ~= nil then
 					lastPlayerData = newData
 					lastPlayerDataTime = os.clock()
+					local newSlotData = type(newData) == "table" and select(1, getSlotData(newData)) or nil
+					local dataPrestige = newSlotData and newSlotData.Progression and newSlotData.Progression.Prestige or newPrestige
 					Library:Notify({
 						Title = "Successfully Prestiged",
-						Description = "Prestiged with " .. selectedBoost .. " and " .. selectedTalent.Tag,
+						Description = "Prestiged with " .. selectedBoost .. " and " .. selectedTalent.Tag .. " | P" .. tostring(dataPrestige),
 						Time = 5
 					})
-					task.wait(10)
+					getgenv().AutoPrestige = false
+					pcall(function() Toggles.AutoPrestigeToggle:SetValue(false) end)
+					returnLobbyAfterPrestige()
+					break
 				else
 					Library:Notify({
 						Title = "Auto Prestige",
@@ -3909,12 +3977,39 @@ SlotGroup:AddDropdown("SelectBoostDropdown", {
 	Text = "Select Boost",
 })
 
-SlotGroup:AddSlider("PrestigeGoldSlider", {
-	Text = "Prestige Gold (in millions)",
-	Default = 0,
-	Min = 0,
-	Max = 100,
-	Rounding = 0,
+SlotGroup:AddInput("P1GoldInput", {
+	Default = "0",
+	Text = "P1 Gold Requirement",
+	Numeric = true,
+	Placeholder = "100000000",
+})
+
+SlotGroup:AddInput("P2GoldInput", {
+	Default = "0",
+	Text = "P2 Gold Requirement",
+	Numeric = true,
+	Placeholder = "200000000",
+})
+
+SlotGroup:AddInput("P3GoldInput", {
+	Default = "0",
+	Text = "P3 Gold Requirement",
+	Numeric = true,
+	Placeholder = "500000000",
+})
+
+SlotGroup:AddInput("P4GoldInput", {
+	Default = "0",
+	Text = "P4 Gold Requirement",
+	Numeric = true,
+	Placeholder = "800000000",
+})
+
+SlotGroup:AddInput("P5GoldInput", {
+	Default = "0",
+	Text = "P5 Gold Requirement",
+	Numeric = true,
+	Placeholder = "1000000000",
 })
 
 -- ==========================================
