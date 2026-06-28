@@ -4186,7 +4186,56 @@ local function ClaimQuestCategory(quests, category)
 	return claimed
 end
 
+local function IsGuiVisible(gui)
+	local current = gui
+	while current and current ~= PlayerGui do
+		if current:IsA("GuiObject") and current.Visible == false then
+			return false
+		end
+		current = current.Parent
+	end
+	return true
+end
+
+local function ClaimVisibleQuestButtons()
+	local questsGui = INTERFACE and INTERFACE:FindFirstChild("Quests")
+	if not questsGui then return 0 end
+
+	local claimed = 0
+	local seen = {}
+	for _, obj in ipairs(questsGui:GetDescendants()) do
+		if obj:IsA("GuiButton") and IsGuiVisible(obj) then
+			local tag = obj:GetAttribute("Tag") or (obj.Parent and obj.Parent:GetAttribute("Tag"))
+			local category = obj:GetAttribute("Category") or (obj.Parent and obj.Parent:GetAttribute("Category"))
+			if tag and category then
+				local key = tostring(category) .. ":" .. tostring(tag)
+				if not seen[key] then
+					seen[key] = true
+					local ok, newData = pcall(function()
+						return getRemote:InvokeServer("Functions", "Quest", tag, category)
+					end)
+					if ok and newData ~= nil then
+						claimed += 1
+						if type(newData) == "table" then
+							lastPlayerData = newData
+							lastPlayerDataTime = os.clock()
+						end
+						task.wait(0.15)
+					end
+				end
+			end
+		end
+	end
+
+	return claimed
+end
+
 local function ClaimAvailableQuests()
+	local visibleClaimed = ClaimVisibleQuestButtons()
+	if visibleClaimed > 0 then
+		return visibleClaimed
+	end
+
 	local pData = ReadQuestPlayerData()
 	if not pData or type(pData.Quests) ~= "table" then return 0 end
 
