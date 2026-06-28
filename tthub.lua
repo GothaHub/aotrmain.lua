@@ -1083,7 +1083,6 @@ if rewards then
 		local hasSpecial = data.Special and next(data.Special) ~= nil
 
 		if webhook and webhook ~= "" then
-			local shadowInfo = GetShadowBanInfo()
 			local payload = {
 				content = hasSpecial and "MYTHICAL DROP! @everyone" or nil,
 				embeds = {{
@@ -1107,11 +1106,6 @@ if rewards then
 								"Gold  : " .. tostring(data.Total.Gold or "0") .. "\n" ..
 								"Gems  : " .. tostring(data.Total.Gems or "0") ..
 								"\n```",
-							inline = true
-						},
-						{
-							name = "Shadow Ban",
-							value = "```\n" .. shadowInfo.Text .. "\n```",
 							inline = true
 						},
 						{
@@ -1194,6 +1188,42 @@ local Talents = {
 	"Furyforge","Quakestrike","Assassin","Amputation","Steel Frame","Resilience",
 	"Vengeflare","Flashstep","Omnirange","Tactician","Gambler","Overslash",
 	"Afterimages","Necromantic","Thanatophobia","Apotheosis","Bloodthief"
+}
+
+local PrestigeTalentData = {
+	["1"] = { Tag = "Blitzblade", Stars = 1, Category = "Offense" },
+	["2"] = { Tag = "Crescendo", Stars = 1, Category = "Offense" },
+	["3"] = { Tag = "Swiftshot", Stars = 1, Category = "Offense" },
+	["4"] = { Tag = "Stalwart", Stars = 2, Category = "Offense" },
+	["5"] = { Tag = "Furyforge", Stars = 3, Category = "Offense" },
+	["6"] = { Tag = "Quakestrike", Stars = 3, Category = "Offense" },
+	["7"] = { Tag = "Guardian", Stars = 1, Category = "Defense" },
+	["8"] = { Tag = "Deflectra", Stars = 1, Category = "Defense" },
+	["9"] = { Tag = "Aegisurge", Stars = 2, Category = "Defense" },
+	["10"] = { Tag = "Vengeflare", Stars = 3, Category = "Defense" },
+	["11"] = { Tag = "Resilience", Stars = 3, Category = "Defense" },
+	["12"] = { Tag = "Mendmaster", Stars = 1, Category = "Support" },
+	["13"] = { Tag = "Cooldown Blitz", Stars = 1, Category = "Support" },
+	["14"] = { Tag = "Lifefeed", Stars = 2, Category = "Support" },
+	["15"] = { Tag = "Vitalize", Stars = 2, Category = "Support" },
+	["16"] = { Tag = "Flashstep", Stars = 3, Category = "Support" },
+	["17"] = { Tag = "Omnirange", Stars = 3, Category = "Support" },
+	["18"] = { Tag = "Stormcharged", Stars = 2, Category = "Offense" },
+	["19"] = { Tag = "Assassin", Stars = 3, Category = "Offense" },
+	["20"] = { Tag = "Amputation", Stars = 3, Category = "Offense" },
+	["21"] = { Tag = "Gambler", Stars = 4, Category = "Offense" },
+	["22"] = { Tag = "Riposte", Stars = 2, Category = "Defense" },
+	["23"] = { Tag = "Necromantic", Stars = 4, Category = "Defense" },
+	["24"] = { Tag = "Thanatophobia", Stars = 4, Category = "Defense" },
+	["25"] = { Tag = "Tactician", Stars = 3, Category = "Support" },
+	["26"] = { Tag = "Gem Fiend", Stars = 2, Category = "Support" },
+	["27"] = { Tag = "Apotheosis", Stars = 4, Category = "Support" },
+	["28"] = { Tag = "Bloodthief", Stars = 4, Category = "Support" },
+	["29"] = { Tag = "Overslash", Stars = 4, Category = "Offense" },
+	["30"] = { Tag = "Surgeshot", Stars = 1, Category = "Offense" },
+	["31"] = { Tag = "Supernova", Stars = 3, Category = "Offense" },
+	["32"] = { Tag = "Afterimages", Stars = 4, Category = "Offense" },
+	["33"] = { Tag = "Steel Frame", Stars = 3, Category = "Defense" },
 }
 
 local Perk_Level_XP = {
@@ -3708,27 +3738,165 @@ SlotGroup:AddToggle("AutoPrestigeToggle", {
 Toggles.AutoPrestigeToggle:OnChanged(function()
 	getgenv().AutoPrestige = Toggles.AutoPrestigeToggle.Value
 	if getgenv().AutoPrestige then
-		if game.PlaceId ~= 14916516914 then return end
 		task.spawn(function()
-			local pData = GetPlayerData()
-			if not pData or not pData.Slots then return end
-			local slotIdx = lp:GetAttribute("Slot")
-			if not slotIdx or not pData.Slots[slotIdx] then return end
-			local gold = pData.Slots[slotIdx].Currency.Gold
-			local requiredGold = Options.PrestigeGoldSlider.Value * 1000000
-			if gold < requiredGold then return end
+			if game.PlaceId ~= 14916516914 then
+				Library:Notify({ Title = "Auto Prestige", Description = "Works in lobby only!", Time = 3 })
+				getgenv().AutoPrestige = false
+				Toggles.AutoPrestigeToggle:SetValue(false)
+				return
+			end
 
-			while getgenv().AutoPrestige do
-				for _, Memory in ipairs(Talents) do
-					if not getgenv().AutoPrestige then break end
-					local success = getRemote:InvokeServer("S_Equipment", "Prestige", {Boosts = Options.SelectBoostDropdown.Value, Talents = Memory})
-					if success then
-						Library:Notify({ Title = "Successfully Prestiged", Description = "Prestiged with " .. Options.SelectBoostDropdown.Value .. " and " .. Memory, Time = 5 })
-						break
+			local function getSlotData(pData)
+				if not pData or not pData.Slots then return nil, nil end
+				local slotIdx = lp:GetAttribute("Slot") or pData.Current_Slot
+				if not slotIdx then return nil, nil end
+				return pData.Slots[slotIdx] or pData.Slots[tostring(slotIdx)], slotIdx
+			end
+
+			local function pickBestPrestigeTalent(nextTalents)
+				local best = nil
+				for _, id in ipairs(nextTalents or {}) do
+					local info = PrestigeTalentData[tostring(id)]
+					if info and (not best or info.Stars > best.Stars) then
+						best = info
 					end
-					task.wait(0.1)
 				end
-				task.wait(1)
+				return best
+			end
+
+			local function extractNextTalents(dataResult, talentsResult)
+				if type(talentsResult) == "table" then return talentsResult end
+				if type(dataResult) == "table" then
+					if type(dataResult.Next_Talents) == "table" then return dataResult.Next_Talents end
+					if type(dataResult.NextTalents) == "table" then return dataResult.NextTalents end
+				end
+				return nil
+			end
+
+			local lastNotice = 0
+			while getgenv().AutoPrestige do
+				lastPlayerDataTime = 0
+				lastPlayerData = nil
+				local okData, pData = pcall(GetPlayerData)
+				local slotData, slotIdx = okData and getSlotData(pData) or nil, nil
+				if okData then
+					slotData, slotIdx = getSlotData(pData)
+				end
+
+				if not slotIdx then
+					pcall(function() getRemote:InvokeServer("Functions", "Select", "A") end)
+					local waited = 0
+					repeat
+						task.wait(0.5)
+						waited += 0.5
+					until lp:GetAttribute("Slot") or waited >= 5 or not getgenv().AutoPrestige
+					task.wait(1)
+					continue
+				end
+
+				if not slotData then
+					if os.clock() - lastNotice > 10 then
+						lastNotice = os.clock()
+						Library:Notify({ Title = "Auto Prestige", Description = "Slot data not ready yet.", Time = 3 })
+					end
+					task.wait(5)
+					continue
+				end
+
+				local currency = slotData.Currency or {}
+				local progression = slotData.Progression or {}
+				local gold = currency.Gold or 0
+				local requiredGold = Options.PrestigeGoldSlider.Value * 1000000
+
+				if gold < requiredGold then
+					if os.clock() - lastNotice > 30 then
+						lastNotice = os.clock()
+						Library:Notify({
+							Title = "Auto Prestige",
+							Description = "Waiting for gold: " .. tostring(gold) .. " / " .. tostring(requiredGold),
+							Time = 4
+						})
+					end
+					task.wait(10)
+					continue
+				end
+
+				local currentPrestige = progression.Prestige or lp:GetAttribute("Prestige") or 0
+				local requiredLevel = 100 + currentPrestige * 25
+				if (progression.Level or 0) < requiredLevel then
+					if os.clock() - lastNotice > 30 then
+						lastNotice = os.clock()
+						Library:Notify({
+							Title = "Auto Prestige",
+							Description = "Waiting for level: " .. tostring(progression.Level or 0) .. " / " .. tostring(requiredLevel),
+							Time = 4
+						})
+					end
+					task.wait(10)
+					continue
+				end
+
+				local okTalents, dataResult, nextTalents = pcall(function()
+					return getRemote:InvokeServer("S_Equipment", "Talents")
+				end)
+
+				if not okTalents then
+					Library:Notify({ Title = "Auto Prestige", Description = "Could not get prestige talents.", Time = 3 })
+					task.wait(5)
+					continue
+				end
+
+				if type(dataResult) == "table" and dataResult.Slots then
+					lastPlayerData = dataResult
+					lastPlayerDataTime = os.clock()
+				end
+
+				nextTalents = extractNextTalents(dataResult, nextTalents)
+				local selectedTalent = pickBestPrestigeTalent(nextTalents)
+
+				if not selectedTalent then
+					Library:Notify({ Title = "Auto Prestige", Description = "No valid talent options returned.", Time = 3 })
+					task.wait(10)
+					continue
+				end
+
+				local selectedBoost = Options.SelectBoostDropdown.Value or "Gold Boost"
+				local selection = {
+					Boosts = selectedBoost,
+					Talents = selectedTalent.Tag
+				}
+
+				Library:Notify({
+					Title = "Auto Prestige",
+					Description = "Trying " .. selectedBoost .. " + " .. selectedTalent.Tag .. " (" .. selectedTalent.Stars .. " stars)",
+					Time = 4
+				})
+
+				local okPrestige, newData, skillPoints, newPrestige = pcall(function()
+					return getRemote:InvokeServer("S_Equipment", "Prestige", selection)
+				end)
+
+				if okPrestige and newData ~= nil and skillPoints ~= nil and newPrestige ~= nil then
+					lastPlayerData = newData
+					lastPlayerDataTime = os.clock()
+					Library:Notify({
+						Title = "Successfully Prestiged",
+						Description = "Prestiged with " .. selectedBoost .. " and " .. selectedTalent.Tag,
+						Time = 5
+					})
+					task.wait(10)
+				else
+					Library:Notify({
+						Title = "Auto Prestige",
+						Description = "Prestige was rejected or not ready. Retrying soon.",
+						Time = 4
+					})
+					task.wait(10)
+				end
+
+				if not getgenv().AutoPrestige then
+					break
+				end
 			end
 		end)
 	end
