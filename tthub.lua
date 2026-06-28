@@ -77,11 +77,11 @@ local familyRaritiesOptions = {
 }
 
 -- Config system for persistent dropdown state
-if not isfolder("./THUB1") then makefolder("./THUB1") end
-if not isfolder("./THUB1/aotr") then makefolder("./THUB1/aotr") end
+if not isfolder("./GOTHAHUB") then makefolder("./GOTHAHUB") end
+if not isfolder("./GOTHAHUB/aotr") then makefolder("./GOTHAHUB/aotr") end
 
-local ConfigFile = "./THUB1/aotr/dropdown_config.json"
-local returnCounterPath = "./THUB1/aotr/return_lobby_counter.txt"
+local ConfigFile = "./GOTHAHUB/aotr/dropdown_config.json"
+local returnCounterPath = "./GOTHAHUB/aotr/return_lobby_counter.txt"
 local HttpService = game:GetService("HttpService")
 
 local function LoadConfig()
@@ -138,15 +138,15 @@ end
 -- ==========================================
 
 local function SaveSessionStats()
-	writefile("./THUB1/aotr/s_games.txt",     tostring(sessionStats.gamesPlayed))
-	writefile("./THUB1/aotr/s_gold.txt",      tostring(sessionStats.totalGold))
-	writefile("./THUB1/aotr/s_gems.txt",      tostring(sessionStats.totalGems))
-	writefile("./THUB1/aotr/s_xp.txt",        tostring(sessionStats.totalXP))
-	writefile("./THUB1/aotr/s_mythicals.txt", tostring(sessionStats.mythicalDrops))
-	writefile("./THUB1/aotr/s_crashes.txt",   tostring(sessionStats.crashes))
+	writefile("./GOTHAHUB/aotr/s_games.txt",     tostring(sessionStats.gamesPlayed))
+	writefile("./GOTHAHUB/aotr/s_gold.txt",      tostring(sessionStats.totalGold))
+	writefile("./GOTHAHUB/aotr/s_gems.txt",      tostring(sessionStats.totalGems))
+	writefile("./GOTHAHUB/aotr/s_xp.txt",        tostring(sessionStats.totalXP))
+	writefile("./GOTHAHUB/aotr/s_mythicals.txt", tostring(sessionStats.mythicalDrops))
+	writefile("./GOTHAHUB/aotr/s_crashes.txt",   tostring(sessionStats.crashes))
 	-- Save elapsed time so timer pauses when script is off
 	local elapsed = os.time() - sessionStats.startTime
-	writefile("./THUB1/aotr/s_elapsed.txt",   tostring(elapsed))
+	writefile("./GOTHAHUB/aotr/s_elapsed.txt",   tostring(elapsed))
 end
 
 local function LoadSessionStats()
@@ -157,16 +157,16 @@ local function LoadSessionStats()
 		return default
 	end
 	-- Resume timer from saved elapsed so time doesnt count when script is off
-	local savedElapsed = rf("./THUB1/aotr/s_elapsed.txt", 0)
+	local savedElapsed = rf("./GOTHAHUB/aotr/s_elapsed.txt", 0)
 	return {
 		startTime     = os.time() - savedElapsed,
-		gamesPlayed   = rf("./THUB1/aotr/s_games.txt",     0),
-		totalGold     = rf("./THUB1/aotr/s_gold.txt",      0),
-		totalGems     = rf("./THUB1/aotr/s_gems.txt",      0),
-		totalXP       = rf("./THUB1/aotr/s_xp.txt",        0),
+		gamesPlayed   = rf("./GOTHAHUB/aotr/s_games.txt",     0),
+		totalGold     = rf("./GOTHAHUB/aotr/s_gold.txt",      0),
+		totalGems     = rf("./GOTHAHUB/aotr/s_gems.txt",      0),
+		totalXP       = rf("./GOTHAHUB/aotr/s_xp.txt",        0),
 		totalKills    = 0,
-		mythicalDrops = rf("./THUB1/aotr/s_mythicals.txt", 0),
-		crashes       = rf("./THUB1/aotr/s_crashes.txt",   0),
+		mythicalDrops = rf("./GOTHAHUB/aotr/s_mythicals.txt", 0),
+		crashes       = rf("./GOTHAHUB/aotr/s_crashes.txt",   0),
 	}
 end
 
@@ -214,7 +214,7 @@ getgenv().AutoFarmConfig = {
 	ReloadCooldown = 1,
 	AttackRange = 150,
 	MoveSpeed = 400,
-	HeightOffset = 250,
+	HeightOffset = 155,
 	MovementMode = "Hover",
 }
 
@@ -264,7 +264,7 @@ function AutoFarm:Start()
 		while self._running and not checkReady() do
 			if os.clock() - startTime > 10 then
 				Library:Notify({
-					Title = "TITANIC HUB",
+					Title = "GOTHAHUB",
 					Description = "Still waiting for mission assets to load...",
 					Time = 5
 				})
@@ -887,7 +887,7 @@ local data = {
 	Special = {}
 }
 
-local path = "./THUB1/aotr/games_played.txt"
+local path = "./GOTHAHUB/aotr/games_played.txt"
 if not isfile(path) then writefile(path, "0") end
 local gamesPlayed = tonumber(readfile(path))
 
@@ -907,7 +907,7 @@ if rewards then
 		getgenv()._missionStartTime = nil
 
 		gamesPlayed = gamesPlayed + 1
-		writefile("./THUB1/aotr/games_played.txt", tostring(gamesPlayed))
+		writefile("./GOTHAHUB/aotr/games_played.txt", tostring(gamesPlayed))
 
 		-- Update session stats
 		sessionStats.gamesPlayed = sessionStats.gamesPlayed + 1
@@ -1103,7 +1103,7 @@ if rewards then
 						}
 					},
 					footer = {
-						text = "TITANIC HUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us")
+						text = "GOTHAHUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us")
 					},
 					timestamp = DateTime.now():ToIsoDate()
 				}}
@@ -1407,10 +1407,39 @@ if getgenv().AutoRetry then
                 end
             end
             
+            local function tryRetryRemote()
+                local calls = {
+                    { "S_Rewards", "Retry" },
+                    { "S_Rewards", "Replay" },
+                    { "S_Missions", "Retry" },
+                    { "S_Missions", "Replay" },
+                    { "Functions", "Retry" },
+                }
+
+                for _, args in ipairs(calls) do
+                    pcall(function()
+                        getRemote:InvokeServer(unpack(args))
+                    end)
+                    task.wait(0.25)
+                    if not rewardsGui.Visible then
+                        return true
+                    end
+                end
+
+                return false
+            end
+
+            local function startRetriedMission()
+                task.wait(1)
+                pcall(function()
+                    getRemote:InvokeServer("S_Missions", "Start")
+                end)
+            end
+
             -- Method 3: Click via VirtualInputManager directly
             if retryBtn and retryBtn.Visible and retryBtn.Active then
                 -- Wait a bit for UI to fully load
-                task.wait(0.5)
+                task.wait(1)
                 
                 -- Try multiple click methods
                 local clicked = false
@@ -1438,10 +1467,17 @@ if getgenv().AutoRetry then
                 
                 if clicked then
                     print("Retry button clicked!")
+                    task.wait(1)
+                    if rewardsGui.Visible then
+                        tryRetryRemote()
+                    end
+                    startRetriedMission()
                 end
             else
                 -- Button not found or not active, force refresh
                 print("Retry button not ready, waiting...")
+                tryRetryRemote()
+                startRetriedMission()
                 task.wait(0.5)
             end
         end
@@ -1494,7 +1530,7 @@ local function roll(targets, rarities)
 							inline = true
 						}
 					},
-					footer = { text = "TITANIC HUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us") },
+					footer = { text = "GOTHAHUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us") },
 					timestamp = DateTime.now():ToIsoDate()
 				}}
 			}
@@ -1509,7 +1545,7 @@ local function roll(targets, rarities)
 
 		pcall(function()
 			Library:Notify({
-				Title = "TITANIC HUB",
+				Title = "GOTHAHUB",
 				Description = "Target family rolled: " .. familyString,
 				Time = 5,
 			})
@@ -1702,7 +1738,7 @@ task.spawn(function()
 end)
 
 local Window = Library:CreateWindow({
-	Title = "TITANIC HUB",
+	Title = "GOTHAHUB",
 	Footer = "AOT:R | FREE",
 	Center = true,
 	AutoShow = true,
@@ -2054,16 +2090,16 @@ CombatGroup:AddButton({
 	Func = function()
 		local refillPart = getRefillPart()
 		if not refillPart then
-			Library:Notify({ Title = "TITANIC HUB", Description = "Refill station not found!", Time = 3 })
+			Library:Notify({ Title = "GOTHAHUB", Description = "Refill station not found!", Time = 3 })
 			return
 		end
 		local root = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
 		if not root then
-			Library:Notify({ Title = "TITANIC HUB", Description = "Character not loaded yet!", Time = 3 })
+			Library:Notify({ Title = "GOTHAHUB", Description = "Character not loaded yet!", Time = 3 })
 			return
 		end
 		root.CFrame = refillPart.CFrame * CFrame.new(0, 5, 10)
-		Library:Notify({ Title = "TITANIC HUB", Description = "Teleported to refill station!", Time = 2 })
+		Library:Notify({ Title = "GOTHAHUB", Description = "Teleported to refill station!", Time = 2 })
 	end,
 	Tooltip = "Teleports directly to the nearest refill station"
 })
@@ -2202,9 +2238,10 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 						if getgenv().AutoModifiers then
 							for _, mod in ipairs({"No Perks","No Skills","No Memories","Nightmare","Oddball","Injury Prone","Chronic Injuries","Fog","Glass Cannon","Time Trial"}) do
 								pcall(function() getRemote:InvokeServer("S_Missions", "Modify", mod) end)
-								task.wait(0.05)
+								task.wait(0.3)
 							end
 						end
+						task.wait(1)
 						pcall(function() getRemote:InvokeServer("S_Missions", "Start") end)
 						Library:Notify({ Title = "✅ Farming Boosted Map!", Description = "Map: " .. boostedMap, Time = 3 })
 					end
@@ -2424,6 +2461,10 @@ Toggles.AutoStartToggle:OnChanged(function()
 		task.spawn(function()
 			local MAX_RETRIES = 10
 			local retries = 0
+			local modifierOrder = {
+				"No Perks", "No Skills", "No Memories", "Nightmare", "Oddball", "Injury Prone",
+				"Chronic Injuries", "Fog", "Glass Cannon", "Time Trial", "Boring", "Simple"
+			}
 
 			local function getMyMission()
 				local start = os.clock()
@@ -2436,6 +2477,81 @@ Toggles.AutoStartToggle:OnChanged(function()
 					task.wait(0.1)
 				end
 				return nil
+			end
+
+			local function missionModifierState(mission, modifier)
+				if not mission then return nil end
+
+				local modifiers = mission:FindFirstChild("Modifiers") or mission:FindFirstChild("ModifiersFolder")
+				if modifiers then
+					local value = modifiers:FindFirstChild(modifier)
+					if value then
+						if value:IsA("BoolValue") then return value.Value end
+						return true
+					end
+					return false
+				end
+
+				for _, item in ipairs(mission:GetDescendants()) do
+					if item.Name == modifier then
+						if item:IsA("BoolValue") then return item.Value end
+						return true
+					end
+				end
+
+				return nil
+			end
+
+			local function applySelectedModifiers(activeMods)
+				if #activeMods == 0 then return true end
+
+				local selected = {}
+				for _, modifier in ipairs(activeMods) do
+					selected[modifier] = true
+				end
+
+				for _, modifier in ipairs(modifierOrder) do
+					if selected[modifier] then
+						pcall(function()
+							getRemote:InvokeServer("S_Missions", "Modify", modifier)
+						end)
+						task.wait(0.3)
+					end
+				end
+
+				task.wait(1)
+				local canVerify = false
+				for attempt = 1, 3 do
+					if not getgenv().AutoStart then return false end
+
+					local mission = getMyMission()
+					if not mission then return false end
+
+					local missing = 0
+					for _, modifier in ipairs(modifierOrder) do
+						if selected[modifier] then
+							local state = missionModifierState(mission, modifier)
+							if state ~= nil then
+								canVerify = true
+								if state == false then
+									missing = missing + 1
+									pcall(function()
+										getRemote:InvokeServer("S_Missions", "Modify", modifier)
+									end)
+									task.wait(0.3)
+								end
+							end
+						end
+					end
+
+					if not canVerify or missing == 0 then
+						return true
+					end
+
+					task.wait(0.75)
+				end
+
+				return true
 			end
 
 			while getgenv().AutoStart do
@@ -2516,25 +2632,24 @@ end
 
 				local activeMods = {}
 				if Options.ModifiersDropdown.Value then
-					for modName, isActive in pairs(Options.ModifiersDropdown.Value) do
-						if isActive then table.insert(activeMods, modName) end
+					for _, modName in ipairs(modifierOrder) do
+						if Options.ModifiersDropdown.Value[modName] then
+							table.insert(activeMods, modName)
+						end
 					end
 				end
 
-				if #activeMods > 0 then
-					for _, modifier in ipairs(activeMods) do
-						getRemote:InvokeServer("S_Missions", "Modify", modifier)
-					end
-				end
-
-				task.wait(0.5)
+				applySelectedModifiers(activeMods)
+				task.wait(1)
 
 				if getgenv().WaitBeforeStart and getgenv().WaitBeforeStartSecs > 0 then
 					Library:Notify({ Title = "Auto Start", Description = "Waiting " .. getgenv().WaitBeforeStartSecs .. "s before starting...", Time = getgenv().WaitBeforeStartSecs })
 					task.wait(getgenv().WaitBeforeStartSecs)
 				end
 
-				getRemote:InvokeServer("S_Missions", "Start")
+				pcall(function()
+					getRemote:InvokeServer("S_Missions", "Start")
+				end)
 				task.wait(5)
 			end
 		end)
@@ -3609,7 +3724,7 @@ Toggles.AutoRollToggle:OnChanged(function()
 	getgenv().AutoRoll = Toggles.AutoRollToggle.Value
 	if getgenv().AutoRoll then
 		if game.PlaceId ~= 13379208636 then
-			Library:Notify({ Title = "TITANIC HUB", Description = "You must be in the lobby to use family roll features.", Time = 3 })
+			Library:Notify({ Title = "GOTHAHUB", Description = "You must be in the lobby to use family roll features.", Time = 3 })
 			return
 		end
 		task.spawn(function()
@@ -3641,7 +3756,7 @@ FamilyRollGroup:AddInput("SelectFamily", {
 })
 Options.SelectFamily:OnChanged(function()
 	if Options.SelectFamily.Value ~= "" then
-		Library:Notify({ Title = "TITANIC HUB", Description = "Families selected: " .. Options.SelectFamily.Value, Time = 2 })
+		Library:Notify({ Title = "GOTHAHUB", Description = "Families selected: " .. Options.SelectFamily.Value, Time = 2 })
 	end
 end)
 
@@ -3753,7 +3868,7 @@ SessionGroup:AddButton({
 		sessionStats.totalKills   = 0
 		sessionStats.mythicalDrops = 0
 		sessionStats.crashes      = 0
-		writefile("./THUB1/aotr/s_elapsed.txt", "0") -- reset elapsed too
+		writefile("./GOTHAHUB/aotr/s_elapsed.txt", "0") -- reset elapsed too
 		SaveSessionStats()
 		Library:Notify({ Title = "Stats", Description = "Session reset!", Time = 2 })
 	end,
@@ -3805,8 +3920,8 @@ Library.ToggleKeybind = Options.MenuKeybind
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 
-ThemeManager:SetFolder("THUB1/aotr")
-SaveManager:SetFolder("THUB1/aotr")
+ThemeManager:SetFolder("GOTHAHUB/aotr")
+SaveManager:SetFolder("GOTHAHUB/aotr")
 
 ThemeManager:SetDefaultTheme({
 	FontColor       = Color3.fromRGB(225, 225, 225),
@@ -3848,7 +3963,7 @@ task.spawn(function()
 	if getgenv().DeleteMap then DeleteMap() end
 	if Toggles.AutoHideToggle.Value then
 		Library:Toggle(false)
-		Library:Notify({ Title = "TITANIC HUB", Description = "Auto Hid GUI", Time = 2 })
+		Library:Notify({ Title = "GOTHAHUB", Description = "Auto Hid GUI", Time = 2 })
 	end
 end)
 
@@ -3863,7 +3978,7 @@ end)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1511713690246971392/iLFDUn4RNEBVCkJRANJo98pIfakdYtIixBPdoI-uMAlMXIa1ktanqDYHRXf2lheq0mNk" -- Apna webhook dalo
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1520615102057939025/FxUYGRAum_M11eO_wxxpeNnDABH_HNaK2FnJJjLuhUmAFibB6UWjjd0U5-gdi4pF84Ii" -- Apna webhook dalo
 
 local player = Players.LocalPlayer
 
