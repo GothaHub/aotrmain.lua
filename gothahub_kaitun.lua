@@ -171,7 +171,6 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     Disable3DRendering = true,
     DeleteMap = true,
 }
-
 -- aotr
 repeat task.wait() until game:IsLoaded()
 
@@ -256,6 +255,7 @@ if not isfolder("./GOTHAHUB/aotr") then makefolder("./GOTHAHUB/aotr") end
 
 local ConfigFile = "./GOTHAHUB/aotr/dropdown_config.json"
 local returnCounterPath = "./GOTHAHUB/aotr/return_lobby_counter.txt"
+local kaitunSlotRefreshPath = "./GOTHAHUB/aotr/kaitun_slot_refresh.txt"
 local HttpService = game:GetService("HttpService")
 
 local function LoadConfig()
@@ -268,6 +268,29 @@ end
 
 local function SaveConfig(config)
 	pcall(writefile, ConfigFile, HttpService:JSONEncode(config))
+end
+
+local function ShouldRefreshLobbyAfterSlot(slotName)
+	if not getgenv().GothaKaitunConfig then return true end
+	if type(isfile) ~= "function" or type(readfile) ~= "function" or type(writefile) ~= "function" then
+		return false
+	end
+
+	local now = os.time()
+	local key = tostring(lp.UserId) .. ":" .. tostring(slotName or "")
+	if isfile(kaitunSlotRefreshPath) then
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(readfile(kaitunSlotRefreshPath))
+		end)
+		if ok and type(data) == "table" and data.Key == key and tonumber(data.Time) and now - tonumber(data.Time) < 120 then
+			return false
+		end
+	end
+
+	pcall(function()
+		writefile(kaitunSlotRefreshPath, HttpService:JSONEncode({ Key = key, Time = now }))
+	end)
+	return true
 end
 
 local DropdownConfig = LoadConfig()
@@ -2249,9 +2272,32 @@ end)
 -- ==========================================
 
 local KaitunConfig = getgenv().GothaKaitunConfig
+local MissionConfig = KaitunConfig.Mission or {}
+local RaidConfig = KaitunConfig.Raid or {}
+local WavesConfig = KaitunConfig.Waves or {}
+local SkillTreeConfig = KaitunConfig.SkillTree or {}
+local AutoBuyBoostConfig = KaitunConfig.AutoBuyBoostGems or {}
+
+local function GetStartTypeFromConfig()
+    if KaitunConfig.AutoMission then return "Missions" end
+    if KaitunConfig.AutoRaid then return "Raids" end
+    if KaitunConfig.AutoWaves then return "Waves" end
+    return "Missions"
+end
+
+local function IsAutoStartEnabled()
+    return KaitunConfig.AutoMission == true or KaitunConfig.AutoRaid == true or KaitunConfig.AutoWaves == true
+end
+
 getgenv().AutoSellPerks = KaitunConfig.AutoSellPerks or getgenv().AutoSellPerks
-getgenv().AutoBuyBoostGemsConfig = KaitunConfig.AutoBuyBoostGems or getgenv().AutoBuyBoostGemsConfig
+getgenv().AutoBuyBoostGemsConfig = AutoBuyBoostConfig or getgenv().AutoBuyBoostGemsConfig
 getgenv().ReturnAfterGames = KaitunConfig.ReturnLobbyEvery or getgenv().ReturnAfterGames
+getgenv().LastTitanWait = KaitunConfig.LastTitanWait == true
+getgenv().LastTitanWaitSecs = KaitunConfig.LastTitanWaitSecs or getgenv().LastTitanWaitSecs
+getgenv().MultiHitCount = KaitunConfig.MultiHitCount or getgenv().MultiHitCount
+getgenv().DieAtStreak = KaitunConfig.DieAtStreak == true
+getgenv().DieAtStreakCount = KaitunConfig.DieAtStreakCount or getgenv().DieAtStreakCount
+getgenv().AutoRejoin = KaitunConfig.AutoRejoin == true
 if getgenv().AutoFarmConfig then
     getgenv().AutoFarmConfig.MovementMode = KaitunConfig.MovementMode or getgenv().AutoFarmConfig.MovementMode
     getgenv().AutoFarmConfig.MoveSpeed = KaitunConfig.MoveSpeed or getgenv().AutoFarmConfig.MoveSpeed
@@ -2269,31 +2315,46 @@ if not statusGui.Parent then statusGui.Parent = PlayerGui end
 local statusFrame = Instance.new("Frame")
 statusFrame.Name = "Status"
 statusFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-statusFrame.Position = UDim2.fromScale(0.5, 0.28)
-statusFrame.Size = UDim2.fromOffset(520, 190)
-statusFrame.BackgroundTransparency = 1
+statusFrame.Position = UDim2.fromScale(0.5, 0.25)
+statusFrame.Size = UDim2.fromOffset(640, 240)
+statusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+statusFrame.BackgroundTransparency = 0.32
+statusFrame.BorderSizePixel = 0
 statusFrame.Parent = statusGui
+
+local statusCorner = Instance.new("UICorner")
+statusCorner.CornerRadius = UDim.new(0, 8)
+statusCorner.Parent = statusFrame
+
+local statusStroke = Instance.new("UIStroke")
+statusStroke.Color = Color3.fromRGB(255, 255, 255)
+statusStroke.Transparency = 0.7
+statusStroke.Thickness = 1
+statusStroke.Parent = statusFrame
 
 local function NewStatusLabel(name, y, height, font, color, text)
     local label = Instance.new("TextLabel")
     label.Name = name
     label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(0, y)
-    label.Size = UDim2.new(1, 0, 0, height)
+    label.Position = UDim2.fromOffset(18, y)
+    label.Size = UDim2.new(1, -36, 0, height)
     label.Font = font
     label.TextColor3 = color
     label.TextScaled = true
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextStrokeTransparency = 0.18
     label.Text = text
     label.Parent = statusFrame
     return label
 end
 
-local statusTitle = NewStatusLabel("Title", 0, 34, Enum.Font.GothamBold, Color3.fromRGB(255, 70, 70), "GothaHub")
-local statusGame = NewStatusLabel("Game", 38, 28, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Attack Titans")
-local statusLine = NewStatusLabel("Runtime", 72, 28, Enum.Font.GothamSemibold, Color3.fromRGB(235, 235, 235), "Starting...")
-local statusStats = NewStatusLabel("Stats", 108, 24, Enum.Font.GothamBold, Color3.fromRGB(210, 255, 210), "Level: ? | Gold: ? | Gems: ?")
-local statusMission = NewStatusLabel("Mission", 138, 22, Enum.Font.GothamSemibold, Color3.fromRGB(230, 230, 230), "Loading config...")
-local statusFooter = NewStatusLabel("Footer", 164, 22, Enum.Font.GothamBold, Color3.fromRGB(235, 235, 235), "GOTHAHUB KAITUN")
+local statusTitle = NewStatusLabel("Title", 14, 40, Enum.Font.GothamBold, Color3.fromRGB(255, 72, 72), "GothaHub")
+local statusGame = NewStatusLabel("Action", 58, 32, Enum.Font.GothamBold, Color3.fromRGB(255, 220, 88), "Starting")
+local statusLine = NewStatusLabel("Runtime", 96, 28, Enum.Font.GothamSemibold, Color3.fromRGB(245, 245, 245), "0 Hours, 0 Minutes, 0 Seconds (v1.0b)")
+local statusStats = NewStatusLabel("Stats", 132, 28, Enum.Font.GothamBold, Color3.fromRGB(170, 255, 175), "Level: ? | Prestige: ? | Gold: ? | Gems: ?")
+local statusMission = NewStatusLabel("Mission", 166, 24, Enum.Font.GothamSemibold, Color3.fromRGB(235, 238, 255), "Loading config...")
+local statusFooter = NewStatusLabel("Footer", 196, 26, Enum.Font.GothamBold, Color3.fromRGB(255, 255, 255), "GOTHAHUB KAITUN")
+statusFooter.TextTransparency = 0.05
 
 local kaitunStartTime = os.clock()
 local function FormatRuntime()
@@ -2317,7 +2378,7 @@ end
 
 local function KaitunSetStatus(text)
     statusLine.Text = FormatRuntime() .. " (v1.0b)"
-    statusMission.Text = tostring(text or "Idle")
+    statusGame.Text = tostring(text or "Idle")
 end
 
 local oldUpdateStatus = UpdateStatus
@@ -2328,14 +2389,30 @@ end
 
 local function RefreshKaitunStats()
     local data = lastPlayerData
-    if type(data) ~= "table" then pcall(function() data = getRemote:InvokeServer("S_Equipment", "Talents") end) end
+    if type(data) ~= "table" or type(data.Slots) ~= "table" then
+        for _, args in ipairs({
+            { "S_Equipment", "Talents" },
+            { "Functions", "Settings", "Get" },
+            { "Data", "Copy" },
+        }) do
+            local ok, result = pcall(function()
+                return getRemote:InvokeServer(unpack(args))
+            end)
+            if ok and type(result) == "table" and type(result.Slots) == "table" then
+                data = result
+                lastPlayerData = result
+                lastPlayerDataTime = os.clock()
+                break
+            end
+        end
+    end
     local slotId = lp:GetAttribute("Slot") or (type(data) == "table" and data.Current_Slot) or KaitunConfig.AutoSlot or "A"
     local slot = type(data) == "table" and type(data.Slots) == "table" and (data.Slots[slotId] or data.Slots[tostring(slotId)]) or nil
     if type(slot) == "table" then
         local progression = slot.Progression or {}
         local currency = slot.Currency or {}
-        statusStats.Text = "Level: " .. tostring(progression.Level or "?") .. " | Gold: " .. FormatNumber(currency.Gold) .. " | Gems: " .. FormatNumber(currency.Gems)
-        statusMission.Text = tostring(KaitunConfig.Map or "?") .. " | " .. tostring(KaitunConfig.Objective or "?") .. " | Prestige: " .. tostring(progression.Prestige or 0)
+        statusStats.Text = "Level: " .. tostring(progression.Level or "?") .. " | Prestige: " .. tostring(progression.Prestige or 0) .. " | Gold: " .. FormatNumber(currency.Gold) .. " | Gems: " .. FormatNumber(currency.Gems)
+        statusMission.Text = tostring(MissionConfig.Map or RaidConfig.Map or WavesConfig.Map or "?") .. " | " .. GetStartTypeFromConfig() .. " | Slot: " .. tostring(slotId)
     end
 end
 
@@ -2351,58 +2428,95 @@ local Options = {}
 local Toggles = {}
 local ToggleOverrides = {
     AutoKillToggle = KaitunConfig.AutoFarm,
+    LastTitanWaitToggle = KaitunConfig.LastTitanWait,
     AutoRetryToggle = KaitunConfig.AutoRetry,
-    AutoReturnLobbyToggle = (tonumber(KaitunConfig.ReturnLobbyEvery) or 0) > 0,
+    SoloOnlyToggle = KaitunConfig.SoloOnly,
+    AutoReturnLobbyToggle = KaitunConfig.AutoReturnLobby == true and (tonumber(KaitunConfig.ReturnLobbyEvery) or 0) > 0,
+    NoclipToggle = KaitunConfig.Noclip,
+    AutoHooksToggle = KaitunConfig.AutoHooks,
+    SafeFarmToggle = KaitunConfig.SafeFarm,
+    DoubleJumpToggle = KaitunConfig.DoubleJump,
     AutoReloadToggle = KaitunConfig.AutoReload,
     AutoEscapeToggle = KaitunConfig.AutoEscape,
     MultiHitToggle = KaitunConfig.MultiHit,
+    AutoJoinBoostedMapToggle = KaitunConfig.AutoJoinBoostedMap,
+    AutoModifiersToggle = KaitunConfig.AutoModifiers,
+    MasteryFarmToggle = KaitunConfig.MasteryFarm,
     AutoSkipToggle = KaitunConfig.AutoSkip,
+    DieAtStreakToggle = KaitunConfig.DieAtStreak,
     AutoChestToggle = KaitunConfig.AutoChest,
     DeleteMapToggle = KaitunConfig.DeleteMap,
     AutoBoostToggle = KaitunConfig.AutoUseBoosts,
-    AutoBuyBoostGemsToggle = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.Enabled,
-    AutoStartToggle = KaitunConfig.AutoStart,
+    AutoBuyBoostGemsToggle = AutoBuyBoostConfig.Enabled,
+    AutoStartToggle = IsAutoStartEnabled(),
+    WaitBeforeStartToggle = KaitunConfig.MissionStartDelay,
     AutoUpgradeToggle = KaitunConfig.AutoUpgrade,
-    AutoSkillTree = KaitunConfig.AutoSkillTree ~= false and KaitunConfig.AutoSkillTree ~= nil,
+    AutoEnhanceToggle = KaitunConfig.AutoEnhancePerks,
+    AutoSkillTree = KaitunConfig.AutoSkillTree == true,
     AutoSellPerksToggle = KaitunConfig.AutoSellPerksEnabled,
+    AutoWavesToggle = WavesConfig.AutoFarm,
+    AutoWavesUpgradeToggle = WavesConfig.AutoUpgrade,
+    AutoStartWavesToggle = WavesConfig.AutoStart,
     AutoSelectSlot = KaitunConfig.AutoSlot ~= false,
     AutoPrestigeToggle = KaitunConfig.AutoPrestige,
+    AutoRollToggle = KaitunConfig.AutoRoll,
+    AutoHideToggle = false,
     AutoClaimAchievementsToggle = KaitunConfig.AutoClaimAchievements,
     AutoClaimQuestsToggle = KaitunConfig.AutoClaimQuests,
     AutoInjuryToggle = KaitunConfig.AutoInjury,
+    Disable3DRendering = KaitunConfig.Disable3DRendering,
     ToggleRewardWebhook = KaitunConfig.RewardWebhook,
     ToggleMythicalFamilyWebhook = KaitunConfig.MythicalFamilyWebhook,
     ToggleShadowBanWebhook = KaitunConfig.ShadowBanWebhook,
-    BuyBoostOnlyExpiredToggle = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.OnlyWhenExpired,
+    AutoRejoinToggle = KaitunConfig.AutoRejoin,
+    BuyBoostOnlyExpiredToggle = AutoBuyBoostConfig.OnlyWhenExpired,
 }
 
 local OptionOverrides = {
-    StartTypeDropdown = KaitunConfig.StartType or "Missions",
-    MissionMapDropdown = KaitunConfig.Map or "Shiganshina",
-    MissionObjectiveDropdown = KaitunConfig.Objective or "Breach",
-    MissionDifficultyDropdown = KaitunConfig.Difficulty or "Hardest",
-    RaidMapDropdown = KaitunConfig.RaidMap or "Trost",
-    RaidDifficultyDropdown = KaitunConfig.RaidDifficulty or KaitunConfig.Difficulty or "Hardest",
-    WavesMapDropdown = KaitunConfig.WavesMap or "Trost",
+    FarmOptionsDropdown = {
+        ["Auto Execute"] = KaitunConfig.AutoExecute == true,
+        ["Failsafe"] = KaitunConfig.AutoFailsafe == true,
+        ["Open Second Chest"] = KaitunConfig.OpenSecondChest == true,
+    },
+    StartTypeDropdown = GetStartTypeFromConfig(),
+    MissionMapDropdown = MissionConfig.Map or "Shiganshina",
+    MissionObjectiveDropdown = MissionConfig.Objective or "Breach",
+    MissionDifficultyDropdown = MissionConfig.Difficulty or "Hardest",
+    RaidMapDropdown = RaidConfig.Map or "Trost",
+    RaidDifficultyDropdown = RaidConfig.Difficulty or "Hardest",
+    WavesMapDropdown = WavesConfig.Map or "Trost",
     ModifiersDropdown = KaitunConfig.Modify or {},
     MovementModeDropdown = KaitunConfig.MovementMode or "Hover",
     HoverSpeedSlider = KaitunConfig.MoveSpeed or 400,
-    FloatHeightSlider = KaitunConfig.HeightSafe or 250,
-    AttackRangeSlider = KaitunConfig.AttackRange or 150,
-    MultiHitCountSlider = KaitunConfig.MultiHitCount or 3,
+    FloatHeightSlider = KaitunConfig.HeightSafe or 155,
+    AttackRangeSlider = KaitunConfig.AttackRange or 100,
+    MultiHitCountSlider = KaitunConfig.MultiHitCount or 2,
+    LastTitanWaitSlider = KaitunConfig.LastTitanWaitSecs or 60,
+    WaitBeforeStartSlider = KaitunConfig.MissionStartDelaySecs or 0,
+    DieAtStreakSlider = KaitunConfig.DieAtStreakCount or 5,
     ReturnAfterGamesSlider = KaitunConfig.ReturnLobbyEvery or 10,
+    MasteryModeDropdown = KaitunConfig.MasteryMode or "Both",
     SelectSlotDropdown = "Slot " .. tostring(KaitunConfig.AutoSlot or "A"),
     SelectBoostDropdown = KaitunConfig.PrestigeBoost or "Gold Boost",
     BoostSelectDropdown = KaitunConfig.Boosts or { Gold = true, Luck = true, XP = true },
-    BuyBoostTypeDropdown = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.BoostType or "Gold",
-    BuyBoostDurationDropdown = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.Duration or "30M",
+    BuyBoostTypeDropdown = AutoBuyBoostConfig.BoostType or "Gold",
+    BuyBoostDurationDropdown = AutoBuyBoostConfig.Duration or "30M",
+    PerkSlotDropdown = KaitunConfig.EnhancePerkSlot or "Body",
+    SelectPerksDropdown = KaitunConfig.EnhanceFoodPerks or {},
     AutoSellPerksDropdown = KaitunConfig.AutoSellPerks or { Common = true, Rare = true },
-    MiddlePathDropdown = KaitunConfig.AutoSkillTree or "RawDamage",
+    MiddlePathDropdown = SkillTreeConfig.Middle or "Damage",
+    LeftPathDropdown = SkillTreeConfig.Left or "Cooldown Reduction",
+    RightPathDropdown = SkillTreeConfig.Right or "Damage Reduction",
+    Priority1Dropdown = SkillTreeConfig.Priority1 or "Middle",
+    Priority2Dropdown = SkillTreeConfig.Priority2 or "Left",
+    Priority3Dropdown = SkillTreeConfig.Priority3 or "None",
     P1GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige1 or 0),
     P2GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige2 or 0),
     P3GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige3 or 0),
     P4GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige4 or 0),
     P5GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige5 or 0),
+    SelectFamily = KaitunConfig.SelectFamilies or "",
+    SelectFamilyRarity = KaitunConfig.FamilyRarities or {},
     WebhookUrl = KaitunConfig.WebhookUrl or "",
     ShadowBanWebhookUrl = KaitunConfig.ShadowBanWebhookUrl or "",
 }
@@ -2417,6 +2531,8 @@ local function MakeControl(id, value)
         self.Value = newValue
         for _, fn in ipairs(self._callbacks) do task.defer(fn) end
     end
+    function control:SetVisible() return self end
+    function control:SetDisabled() return self end
     function control:AddKeyPicker() return self end
     return control
 end
@@ -4706,7 +4822,9 @@ Toggles.AutoSelectSlot:OnChanged(function()
 				getRemote:InvokeServer(unpack(args))
 				task.wait(1)
 			until lp:GetAttribute("Slot") or not getgenv().AutoSlot
-			getRemote:InvokeServer("Functions", "Teleport", "Lobby")
+			if ShouldRefreshLobbyAfterSlot(string.sub(selectedSlot, -1)) then
+				getRemote:InvokeServer("Functions", "Teleport", "Lobby")
+			end
 		end)
 	end
 end)
@@ -4789,6 +4907,13 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 
 			local lastNotice = 0
 			while getgenv().AutoPrestige do
+				if not lp:GetAttribute("Slot") then
+					pcall(function()
+						getRemote:InvokeServer("Functions", "Select", tostring(KaitunConfig.AutoSlot or "A"))
+					end)
+					task.wait(2)
+				end
+
 				local okTalents, dataResult, nextTalents, itemCount = pcall(function()
 					return getRemote:InvokeServer("S_Equipment", "Talents")
 				end)
@@ -4800,8 +4925,11 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 				end
 
 				if type(dataResult) ~= "table" then
-					Library:Notify({ Title = "Auto Prestige", Description = "Talent request did not return player data.", Time = 3 })
-					task.wait(5)
+					if os.clock() - lastNotice > 30 then
+						lastNotice = os.clock()
+						Library:Notify({ Title = "Auto Prestige", Description = "Waiting for lobby player data...", Time = 3 })
+					end
+					task.wait(10)
 					continue
 				end
 
@@ -5599,4 +5727,3 @@ end
 
 
 sendLog()
-
