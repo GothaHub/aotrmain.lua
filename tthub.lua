@@ -102,6 +102,7 @@ getgenv().AutoRoll = false
 getgenv().AutoSlot = false
 getgenv().AutoUpgrade = false
 getgenv().AutoPerk = false
+getgenv().AutoSellPerksEnabled = false
 getgenv().AutoSkillTree = false
 getgenv().AutoStart = false
 getgenv().AutoChest = false
@@ -124,6 +125,7 @@ getgenv().LastTitanWait = false
 getgenv().LastTitanWaitSecs = 60
 getgenv().OpenSecondChest = false
 getgenv().DeleteMap = DropdownConfig.DeleteMap or false
+getgenv().AutoSellPerks = DropdownConfig.AutoSellPerks or { Common = true, Rare = true, Epic = false, Legendary = false, Mythic = false }
 getgenv().AdminConfig = false
 getgenv().HideDamageText = false
 if not isfile(returnCounterPath) then writefile(returnCounterPath, "0") end
@@ -1365,6 +1367,123 @@ end
 local function GetPerkXP(rarity, level)
 	local base = Perk_Base_XP[rarity] or 0
 	return base * math.max(level, 1)
+end
+
+local function GetPerkPlayerData()
+	local attempts = {
+		{ "Functions", "Settings", "Get" },
+		{ "Data", "Copy" },
+		{ "S_Equipment", "Talents" },
+	}
+
+	for _, args in ipairs(attempts) do
+		local ok, result = pcall(function()
+			return getRemote:InvokeServer(unpack(args))
+		end)
+
+		if ok and type(result) == "table" and type(result.Slots) == "table" then
+			local slotId = result.Current_Slot or lp:GetAttribute("Slot") or "A"
+			local slot = result.Slots[slotId]
+			if type(slot) == "table" and type(slot.Perks) == "table" then
+				return result
+			end
+		end
+
+		task.wait(0.15)
+	end
+
+	return nil
+end
+
+local function GetSlotPerksFromData(data)
+	if type(data) ~= "table" or type(data.Slots) ~= "table" then return nil, nil end
+
+	local slotId = data.Current_Slot or lp:GetAttribute("Slot") or "A"
+	local slot = data.Slots[slotId]
+	if type(slot) == "table" and type(slot.Perks) == "table" then
+		return slot.Perks, slotId
+	end
+
+	for id, candidate in pairs(data.Slots) do
+		if type(candidate) == "table" and type(candidate.Perks) == "table" then
+			return candidate.Perks, id
+		end
+	end
+
+	return nil, slotId
+end
+
+local function IsAutoSellPerkRarity(rarity)
+	local selected = getgenv().AutoSellPerks or {}
+	if selected[rarity] == true then return true end
+	return rarity == "Secret" and selected.Mythic == true
+end
+
+local function BuildEquippedPerkSet(equipped)
+	local set = {}
+	if type(equipped) ~= "table" then return set end
+
+	for _, id in pairs(equipped) do
+		if id ~= nil and id ~= "" then
+			set[tostring(id)] = true
+		end
+	end
+
+	return set
+end
+
+local function CollectAutoSellPerks(perks)
+	local storage = perks and perks.Storage
+	if type(storage) ~= "table" then return {} end
+
+	local equipped = BuildEquippedPerkSet(perks.Equipped)
+	local candidates = {}
+
+	for id, perk in pairs(storage) do
+		local perkId = tostring(id)
+		local name = type(perk) == "table" and perk.Name or nil
+		local rarity = name and GetPerkRarity(name) or nil
+		if rarity and IsAutoSellPerkRarity(rarity) and not equipped[perkId] then
+			table.insert(candidates, perkId)
+		end
+	end
+
+	return candidates
+end
+
+local function SellAutoPerksOnce()
+	local data = GetPerkPlayerData()
+	local perks = nil
+	if data then
+		perks = GetSlotPerksFromData(data)
+	end
+	if type(perks) ~= "table" then return 0 end
+
+	local candidates = CollectAutoSellPerks(perks)
+	if #candidates == 0 then return 0 end
+
+	local sold = 0
+	local batchSize = 40
+	for i = 1, #candidates, batchSize do
+		local batch = {}
+		for j = i, math.min(i + batchSize - 1, #candidates) do
+			table.insert(batch, candidates[j])
+		end
+
+		local ok, result = pcall(function()
+			return getRemote:InvokeServer("S_Equipment", "Delete", "Perk", batch)
+		end)
+
+		if ok and type(result) == "table" then
+			sold += #batch
+		else
+			break
+		end
+
+		task.wait(0.2)
+	end
+
+	return sold
 end
 
 local function UseButton(button)
@@ -3512,6 +3631,79 @@ UpgradesGroup:AddDropdown("SelectPerksDropdown", {
 	Text = "Perks to use (Food)",
 })
 
+local autoSellPerkDefaults = getgenv().AutoSellPerks or {}
+if autoSellPerkDefaults.Secret == true then autoSellPerkDefaults.Mythic = true end
+
+UpgradesGroup:AddDropdown("AutoSellPerksDropdown", {
+	Values = {"Common", "Rare", "Epic", "Legendary", "Mythic"},
+	Default = autoSellPerkDefaults,
+	Multi = true,
+	Text = "Perks to sell",
+})
+Options.AutoSellPerksDropdown:OnChanged(function()
+	local selected = Options.AutoSellPerksDropdown.Value or {}
+	getgenv().AutoSellPerks = {
+		Common = selected.Common == true,
+		Rare = selected.Rare == true,
+		Epic = selected.Epic == true,
+		Legendary = selected.Legendary == true,
+		Mythic = selected.Mythic == true,
+	}
+	DropdownConfig.AutoSellPerks = getgenv().AutoSellPerks
+	SaveConfig(DropdownConfig)
+end)
+
+UpgradesGroup:AddToggle("AutoSellPerksToggle", {
+	Text = "Auto Sell Perks",
+	Default = false,
+	Tooltip = "Sells stored perks matching the selected rarities. Equipped perks are skipped.",
+})
+Toggles.AutoSellPerksToggle:OnChanged(function()
+	getgenv().AutoSellPerksEnabled = Toggles.AutoSellPerksToggle.Value
+	if not getgenv().AutoSellPerksEnabled then return end
+
+	task.spawn(function()
+		if getgenv().AutoSellPerksRunning then return end
+		getgenv().AutoSellPerksRunning = true
+
+		while getgenv().AutoSellPerksEnabled do
+			if game.PlaceId ~= 14916516914 then
+				Library:Notify({ Title = "Auto Sell Perks", Description = "Works in lobby!", Time = 3 })
+				getgenv().AutoSellPerksEnabled = false
+				Toggles.AutoSellPerksToggle:SetValue(false)
+				break
+			end
+
+			local sold = SellAutoPerksOnce()
+			if sold > 0 then
+				Library:Notify({ Title = "Auto Sell Perks", Description = "Sold " .. tostring(sold) .. " perk(s).", Time = 3 })
+				task.wait(3)
+			else
+				task.wait(30)
+			end
+		end
+
+		getgenv().AutoSellPerksRunning = false
+	end)
+end)
+
+UpgradesGroup:AddButton({
+	Text = "Sell Perks Now",
+	Func = function()
+		if game.PlaceId ~= 14916516914 then
+			Library:Notify({ Title = "Auto Sell Perks", Description = "Must be in lobby!", Time = 3 })
+			return
+		end
+
+		local sold = SellAutoPerksOnce()
+		Library:Notify({
+			Title = "Auto Sell Perks",
+			Description = sold > 0 and ("Sold " .. tostring(sold) .. " perk(s).") or "No matching perks found.",
+			Time = 4
+		})
+	end,
+})
+
 UpgradesGroup:AddLabel("Default perk slot is Body")
 
 -- ==========================================
@@ -4141,114 +4333,215 @@ Toggles.AutoClaimAchievementsToggle:OnChanged(function()
 	end
 end)
 
-local function ReadQuestPlayerData()
-	local ok, result = pcall(GetPlayerData)
-	if ok and type(result) == "table" and type(result.Quests) == "table" then
-		return result
+local QuestAmountData = {
+	["Novice Adventurer"] = 10,
+	["Seasoned Operative"] = 25,
+	["Master of Missions"] = 50,
+	["Elite Taskmaster"] = 100,
+	["Legendary Quester"] = 250,
+	["Completionist"] = 500,
+	["Rookie Raider"] = 10,
+	["Raid Veteran"] = 25,
+	["Raid Commander"] = 50,
+	["Raid Overlord"] = 100,
+	["Raid Warlord"] = 250,
+	["Raid Conqueror"] = 500,
+	["Precise Striker"] = 5,
+	["Critical Sniper"] = 10,
+	["Devastating Precision"] = 25,
+	["Critical Master"] = 50,
+	["Critical Legend"] = 100,
+	["Critical Demigod"] = 250,
+	["Novice Wrecker"] = 400,
+	["Demolition Expert"] = 1600,
+	["Destruction Maestro"] = 5500,
+	["Damage Dynamo"] = 20000,
+	["Cataclysmic Force"] = 70000,
+	["Devastation Virtuoso"] = 150000,
+	["Penny Pincher"] = 25000,
+	["Wealth Accumulator"] = 100000,
+	["Treasure Hunter"] = 400000,
+	["Fortune Hoarder"] = 1000000,
+	["Money Magician"] = 5000000,
+	["Currency Emperor"] = 25000000,
+	["Guardian Angel"] = 5,
+	["Rescuer Extraordinaire"] = 10,
+	["Lifesaver Pro"] = 25,
+	["Savior Supreme"] = 50,
+	["Player's Champion"] = 100,
+	["Ultimate Protector"] = 250,
+	["Eye of the Storm"] = 75,
+	["Leg Lacerator"] = 150,
+	["Arm Annihilator"] = 400,
+	["Titan Torturer"] = 750,
+	["Titan Annihilator"] = 1250,
+	["Titan's Nightmare"] = 2500,
+	["Titan Hunter"] = 100,
+	["Titan Slayer"] = 250,
+	["Titan Executioner"] = 500,
+	["Titan Butcher"] = 1000,
+	["Titan Dominator"] = 2500,
+	["Titan Conqueror"] = 10000,
+	["Rookie Adventurer"] = 10,
+	["Seasoned Warrior"] = 25,
+	["Master of Experience"] = 50,
+	["Legendary Ascendant"] = 75,
+	["Divine Prestige"] = 100,
+	["Ultimate Champion"] = 125,
+	["Prestige Aspirant"] = 1,
+	["Prestige Challenger"] = 2,
+	["Prestige Enthusiast"] = 3,
+	["Prestige Expert"] = 4,
+	["Prestige Grandmaster"] = 5,
+	["Casual Explorer"] = 5,
+	["Dedicated Adventurer"] = 10,
+	["Seasoned Gamer"] = 25,
+	["Endurance Champion"] = 50,
+	["Timeless Immortal"] = 100,
+	["Infinite Voyager"] = 250,
+	["Shifting Apprentice"] = 10,
+	["Shifting Adept"] = 25,
+	["Shifting Expert"] = 50,
+	["Shifting Master"] = 100,
+	["Shifting Guru"] = 125,
+	["Shifting Virtuoso"] = 250,
+	["Skill Novice"] = 100,
+	["Skill Practitioner"] = 250,
+	["Skill Expert"] = 500,
+	["Skill Master"] = 1000,
+	["Skill Virtuoso"] = 2500,
+	["Skill Prodigy"] = 5000,
+	["Team Player"] = 10,
+	["Teamwork Enthusiast"] = 25,
+	["Cooperative Expert"] = 50,
+	["Teamwork Specialist"] = 75,
+	["Teamwork Virtuoso"] = 150,
+	["Teamwork Maestro"] = 250,
+	["Towers"] = 3,
+	["Escort"] = 1,
+	["Ice Burst Stones"] = 3,
+	["Retrieve Missing Supplies"] = 3,
+	["Defend Missing Supplies"] = 1,
+}
+
+local function GetQuestContainer(pData)
+	if type(pData) ~= "table" then return nil end
+	if type(pData.Quests) == "table" then return pData.Quests end
+
+	local slots = pData.Slots
+	local slotKey = pData.Current_Slot or lp:GetAttribute("Slot")
+	if type(slots) == "table" and slotKey ~= nil then
+		local slotData = slots[slotKey] or slots[tostring(slotKey)]
+		if type(slotData) == "table" and type(slotData.Quests) == "table" then
+			return slotData.Quests
+		end
 	end
 
-	ok, result = pcall(function()
-		return getRemote:InvokeServer("Data", "Copy")
-	end)
-	if ok and type(result) == "table" and type(result.Quests) == "table" then
-		return result
+	if type(slots) == "table" then
+		for _, slotData in pairs(slots) do
+			if type(slotData) == "table" and type(slotData.Quests) == "table" then
+				return slotData.Quests
+			end
+		end
 	end
 
 	return nil
 end
 
-local function ClaimQuestCategory(quests, category)
-	local claimed = 0
-	local categoryQuests = quests and quests[category]
-	if type(categoryQuests) ~= "table" then return 0 end
-
-	for key, quest in pairs(categoryQuests) do
-		if type(quest) == "table" and quest.Rewarded == nil then
-			local tag = quest.Tag or tostring(key)
-			local amount = tonumber(quest.Amount)
-			local current = tonumber(quest.Current) or 0
-			if tag and (not amount or current >= amount) then
-				local ok, newData = pcall(function()
-					return getRemote:InvokeServer("Functions", "Quest", tag, category)
-				end)
-				if ok and newData ~= nil then
-					claimed += 1
-					if type(newData) == "table" then
-						lastPlayerData = newData
-						lastPlayerDataTime = os.clock()
-					end
-					task.wait(0.15)
-				end
-			end
+local function ReadQuestPlayerData()
+	for _, args in ipairs({
+		{ "Functions", "Settings", "Get" },
+		{ "Data", "Copy" },
+		{ "S_Equipment", "Talents" },
+	}) do
+		local ok, result = pcall(function()
+			return getRemote:InvokeServer(unpack(args))
+		end)
+		if ok and type(GetQuestContainer(result)) == "table" then
+			lastPlayerData = result
+			lastPlayerDataTime = os.clock()
+			return result
 		end
 	end
-
-	return claimed
+	return nil
 end
 
-local function IsGuiVisible(gui)
-	local current = gui
-	while current and current ~= PlayerGui do
-		if current:IsA("GuiObject") and current.Visible == false then
-			return false
-		end
-		current = current.Parent
-	end
-	return true
+local function GetQuestAmount(quest)
+	local amount = tonumber(quest.Amount)
+	if amount then return amount end
+	return QuestAmountData[quest.Tag]
 end
 
-local function ClaimVisibleQuestButtons()
-	local questsGui = INTERFACE and INTERFACE:FindFirstChild("Quests")
-	if not questsGui then return 0 end
-
-	local claimed = 0
+local function CollectClaimableQuests(pData)
+	local quests = GetQuestContainer(pData)
+	local candidates = {}
 	local seen = {}
-	for _, obj in ipairs(questsGui:GetDescendants()) do
-		if obj:IsA("GuiButton") and IsGuiVisible(obj) then
-			local tag = obj:GetAttribute("Tag") or (obj.Parent and obj.Parent:GetAttribute("Tag"))
-			local category = obj:GetAttribute("Category") or (obj.Parent and obj.Parent:GetAttribute("Category"))
-			if tag and category then
-				local key = tostring(category) .. ":" .. tostring(tag)
-				if not seen[key] then
-					seen[key] = true
-					local ok, newData = pcall(function()
-						return getRemote:InvokeServer("Functions", "Quest", tag, category)
-					end)
-					if ok and newData ~= nil then
-						claimed += 1
-						if type(newData) == "table" then
-							lastPlayerData = newData
-							lastPlayerDataTime = os.clock()
+	if type(quests) ~= "table" then return candidates end
+
+	local function add(tag, category)
+		if type(tag) ~= "string" or type(category) ~= "string" then return end
+		local key = category .. "::" .. tag
+		if seen[key] then return end
+		seen[key] = true
+		table.insert(candidates, { Tag = tag, Category = category })
+	end
+
+	for category, entries in pairs(quests) do
+		if category == "Battlepass" and type(entries) == "table" then
+			for weekName, weekEntries in pairs(entries) do
+				if type(weekEntries) == "table" then
+					for _, quest in pairs(weekEntries) do
+						if type(quest) == "table" and quest.Rewarded == nil and quest.Tag then
+							local amount = tonumber(quest.Amount)
+							local current = tonumber(quest.Current) or 0
+							if amount and current >= amount then
+								add(quest.Tag, tostring(weekName))
+							end
 						end
-						task.wait(0.15)
+					end
+				end
+			end
+		elseif type(entries) == "table" then
+			for _, quest in pairs(entries) do
+				if type(quest) == "table" and quest.Rewarded == nil and quest.Tag then
+					local amount = GetQuestAmount(quest)
+					local current = tonumber(quest.Current) or 0
+					if amount and current >= amount then
+						add(quest.Tag, tostring(category))
 					end
 				end
 			end
 		end
 	end
 
-	return claimed
+	return candidates
 end
 
 local function ClaimAvailableQuests()
-	local visibleClaimed = ClaimVisibleQuestButtons()
-	if visibleClaimed > 0 then
-		return visibleClaimed
-	end
-
 	local pData = ReadQuestPlayerData()
-	if not pData or type(pData.Quests) ~= "table" then return 0 end
+	if not pData then return 0 end
 
-	local quests = pData.Quests
 	local claimed = 0
-	for _, category in ipairs({ "Main", "Side", "Spears", "Daily", "Weekly", "Regiment" }) do
-		claimed += ClaimQuestCategory(quests, category)
-	end
+	for _ = 1, 6 do
+		local candidates = CollectClaimableQuests(pData)
+		if #candidates == 0 then break end
 
-	if type(quests.Battlepass) == "table" then
-		for week, _ in pairs(quests.Battlepass) do
-			claimed += ClaimQuestCategory(quests.Battlepass, week)
+		local claimedThisPass = 0
+		for _, quest in ipairs(candidates) do
+			local ok, newData, questData, rewards = pcall(function()
+				return getRemote:InvokeServer("Functions", "Quest", quest.Tag, quest.Category)
+			end)
+			if ok and type(newData) == "table" and questData ~= nil and rewards ~= nil then
+				claimed += 1
+				claimedThisPass += 1
+				pData = newData
+				lastPlayerData = newData
+				lastPlayerDataTime = os.clock()
+				task.wait(0.12)
+			end
 		end
+
+		if claimedThisPass == 0 then break end
 	end
 
 	return claimed
