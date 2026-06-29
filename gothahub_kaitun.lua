@@ -171,6 +171,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     Disable3DRendering = true,
     DeleteMap = true,
 }
+
 -- aotr
 repeat task.wait() until game:IsLoaded()
 
@@ -2248,32 +2249,9 @@ end)
 -- ==========================================
 
 local KaitunConfig = getgenv().GothaKaitunConfig
-local MissionConfig = KaitunConfig.Mission or {}
-local RaidConfig = KaitunConfig.Raid or {}
-local WavesConfig = KaitunConfig.Waves or {}
-local SkillTreeConfig = KaitunConfig.SkillTree or {}
-local AutoBuyBoostConfig = KaitunConfig.AutoBuyBoostGems or {}
-
-local function GetStartTypeFromConfig()
-    if KaitunConfig.AutoMission then return "Missions" end
-    if KaitunConfig.AutoRaid then return "Raids" end
-    if KaitunConfig.AutoWaves then return "Waves" end
-    return "Missions"
-end
-
-local function IsAutoStartEnabled()
-    return KaitunConfig.AutoMission == true or KaitunConfig.AutoRaid == true or KaitunConfig.AutoWaves == true
-end
-
 getgenv().AutoSellPerks = KaitunConfig.AutoSellPerks or getgenv().AutoSellPerks
-getgenv().AutoBuyBoostGemsConfig = AutoBuyBoostConfig or getgenv().AutoBuyBoostGemsConfig
+getgenv().AutoBuyBoostGemsConfig = KaitunConfig.AutoBuyBoostGems or getgenv().AutoBuyBoostGemsConfig
 getgenv().ReturnAfterGames = KaitunConfig.ReturnLobbyEvery or getgenv().ReturnAfterGames
-getgenv().LastTitanWait = KaitunConfig.LastTitanWait == true
-getgenv().LastTitanWaitSecs = KaitunConfig.LastTitanWaitSecs or getgenv().LastTitanWaitSecs
-getgenv().MultiHitCount = KaitunConfig.MultiHitCount or getgenv().MultiHitCount
-getgenv().DieAtStreak = KaitunConfig.DieAtStreak == true
-getgenv().DieAtStreakCount = KaitunConfig.DieAtStreakCount or getgenv().DieAtStreakCount
-getgenv().AutoRejoin = KaitunConfig.AutoRejoin == true
 if getgenv().AutoFarmConfig then
     getgenv().AutoFarmConfig.MovementMode = KaitunConfig.MovementMode or getgenv().AutoFarmConfig.MovementMode
     getgenv().AutoFarmConfig.MoveSpeed = KaitunConfig.MoveSpeed or getgenv().AutoFarmConfig.MoveSpeed
@@ -2357,7 +2335,7 @@ local function RefreshKaitunStats()
         local progression = slot.Progression or {}
         local currency = slot.Currency or {}
         statusStats.Text = "Level: " .. tostring(progression.Level or "?") .. " | Gold: " .. FormatNumber(currency.Gold) .. " | Gems: " .. FormatNumber(currency.Gems)
-        statusMission.Text = tostring(MissionConfig.Map or RaidConfig.Map or WavesConfig.Map or "?") .. " | " .. GetStartTypeFromConfig() .. " | Prestige: " .. tostring(progression.Prestige or 0)
+        statusMission.Text = tostring(KaitunConfig.Map or "?") .. " | " .. tostring(KaitunConfig.Objective or "?") .. " | Prestige: " .. tostring(progression.Prestige or 0)
     end
 end
 
@@ -2373,95 +2351,58 @@ local Options = {}
 local Toggles = {}
 local ToggleOverrides = {
     AutoKillToggle = KaitunConfig.AutoFarm,
-    LastTitanWaitToggle = KaitunConfig.LastTitanWait,
     AutoRetryToggle = KaitunConfig.AutoRetry,
-    SoloOnlyToggle = KaitunConfig.SoloOnly,
-    AutoReturnLobbyToggle = KaitunConfig.AutoReturnLobby == true and (tonumber(KaitunConfig.ReturnLobbyEvery) or 0) > 0,
-    NoclipToggle = KaitunConfig.Noclip,
-    AutoHooksToggle = KaitunConfig.AutoHooks,
-    SafeFarmToggle = KaitunConfig.SafeFarm,
-    DoubleJumpToggle = KaitunConfig.DoubleJump,
+    AutoReturnLobbyToggle = (tonumber(KaitunConfig.ReturnLobbyEvery) or 0) > 0,
     AutoReloadToggle = KaitunConfig.AutoReload,
     AutoEscapeToggle = KaitunConfig.AutoEscape,
     MultiHitToggle = KaitunConfig.MultiHit,
-    AutoJoinBoostedMapToggle = KaitunConfig.AutoJoinBoostedMap,
-    AutoModifiersToggle = KaitunConfig.AutoModifiers,
-    MasteryFarmToggle = KaitunConfig.MasteryFarm,
     AutoSkipToggle = KaitunConfig.AutoSkip,
-    DieAtStreakToggle = KaitunConfig.DieAtStreak,
     AutoChestToggle = KaitunConfig.AutoChest,
     DeleteMapToggle = KaitunConfig.DeleteMap,
     AutoBoostToggle = KaitunConfig.AutoUseBoosts,
-    AutoBuyBoostGemsToggle = AutoBuyBoostConfig.Enabled,
-    AutoStartToggle = IsAutoStartEnabled(),
-    WaitBeforeStartToggle = KaitunConfig.MissionStartDelay,
+    AutoBuyBoostGemsToggle = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.Enabled,
+    AutoStartToggle = KaitunConfig.AutoStart,
     AutoUpgradeToggle = KaitunConfig.AutoUpgrade,
-    AutoEnhanceToggle = KaitunConfig.AutoEnhancePerks,
-    AutoSkillTree = KaitunConfig.AutoSkillTree == true,
+    AutoSkillTree = KaitunConfig.AutoSkillTree ~= false and KaitunConfig.AutoSkillTree ~= nil,
     AutoSellPerksToggle = KaitunConfig.AutoSellPerksEnabled,
-    AutoWavesToggle = WavesConfig.AutoFarm,
-    AutoWavesUpgradeToggle = WavesConfig.AutoUpgrade,
-    AutoStartWavesToggle = WavesConfig.AutoStart,
     AutoSelectSlot = KaitunConfig.AutoSlot ~= false,
     AutoPrestigeToggle = KaitunConfig.AutoPrestige,
-    AutoRollToggle = KaitunConfig.AutoRoll,
-    AutoHideToggle = false,
     AutoClaimAchievementsToggle = KaitunConfig.AutoClaimAchievements,
     AutoClaimQuestsToggle = KaitunConfig.AutoClaimQuests,
     AutoInjuryToggle = KaitunConfig.AutoInjury,
-    Disable3DRendering = KaitunConfig.Disable3DRendering,
     ToggleRewardWebhook = KaitunConfig.RewardWebhook,
     ToggleMythicalFamilyWebhook = KaitunConfig.MythicalFamilyWebhook,
     ToggleShadowBanWebhook = KaitunConfig.ShadowBanWebhook,
-    AutoRejoinToggle = KaitunConfig.AutoRejoin,
-    BuyBoostOnlyExpiredToggle = AutoBuyBoostConfig.OnlyWhenExpired,
+    BuyBoostOnlyExpiredToggle = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.OnlyWhenExpired,
 }
 
 local OptionOverrides = {
-    FarmOptionsDropdown = {
-        ["Auto Execute"] = KaitunConfig.AutoExecute == true,
-        ["Failsafe"] = KaitunConfig.AutoFailsafe == true,
-        ["Open Second Chest"] = KaitunConfig.OpenSecondChest == true,
-    },
-    StartTypeDropdown = GetStartTypeFromConfig(),
-    MissionMapDropdown = MissionConfig.Map or "Shiganshina",
-    MissionObjectiveDropdown = MissionConfig.Objective or "Breach",
-    MissionDifficultyDropdown = MissionConfig.Difficulty or "Hardest",
-    RaidMapDropdown = RaidConfig.Map or "Trost",
-    RaidDifficultyDropdown = RaidConfig.Difficulty or "Hardest",
-    WavesMapDropdown = WavesConfig.Map or "Trost",
+    StartTypeDropdown = KaitunConfig.StartType or "Missions",
+    MissionMapDropdown = KaitunConfig.Map or "Shiganshina",
+    MissionObjectiveDropdown = KaitunConfig.Objective or "Breach",
+    MissionDifficultyDropdown = KaitunConfig.Difficulty or "Hardest",
+    RaidMapDropdown = KaitunConfig.RaidMap or "Trost",
+    RaidDifficultyDropdown = KaitunConfig.RaidDifficulty or KaitunConfig.Difficulty or "Hardest",
+    WavesMapDropdown = KaitunConfig.WavesMap or "Trost",
     ModifiersDropdown = KaitunConfig.Modify or {},
     MovementModeDropdown = KaitunConfig.MovementMode or "Hover",
     HoverSpeedSlider = KaitunConfig.MoveSpeed or 400,
-    FloatHeightSlider = KaitunConfig.HeightSafe or 155,
-    AttackRangeSlider = KaitunConfig.AttackRange or 100,
-    MultiHitCountSlider = KaitunConfig.MultiHitCount or 2,
-    LastTitanWaitSlider = KaitunConfig.LastTitanWaitSecs or 60,
-    WaitBeforeStartSlider = KaitunConfig.MissionStartDelaySecs or 0,
-    DieAtStreakSlider = KaitunConfig.DieAtStreakCount or 5,
+    FloatHeightSlider = KaitunConfig.HeightSafe or 250,
+    AttackRangeSlider = KaitunConfig.AttackRange or 150,
+    MultiHitCountSlider = KaitunConfig.MultiHitCount or 3,
     ReturnAfterGamesSlider = KaitunConfig.ReturnLobbyEvery or 10,
-    MasteryModeDropdown = KaitunConfig.MasteryMode or "Both",
     SelectSlotDropdown = "Slot " .. tostring(KaitunConfig.AutoSlot or "A"),
     SelectBoostDropdown = KaitunConfig.PrestigeBoost or "Gold Boost",
     BoostSelectDropdown = KaitunConfig.Boosts or { Gold = true, Luck = true, XP = true },
-    BuyBoostTypeDropdown = AutoBuyBoostConfig.BoostType or "Gold",
-    BuyBoostDurationDropdown = AutoBuyBoostConfig.Duration or "30M",
-    PerkSlotDropdown = KaitunConfig.EnhancePerkSlot or "Body",
-    SelectPerksDropdown = KaitunConfig.EnhanceFoodPerks or {},
+    BuyBoostTypeDropdown = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.BoostType or "Gold",
+    BuyBoostDurationDropdown = KaitunConfig.AutoBuyBoostGems and KaitunConfig.AutoBuyBoostGems.Duration or "30M",
     AutoSellPerksDropdown = KaitunConfig.AutoSellPerks or { Common = true, Rare = true },
-    MiddlePathDropdown = SkillTreeConfig.Middle or "Damage",
-    LeftPathDropdown = SkillTreeConfig.Left or "Cooldown Reduction",
-    RightPathDropdown = SkillTreeConfig.Right or "Damage Reduction",
-    Priority1Dropdown = SkillTreeConfig.Priority1 or "Middle",
-    Priority2Dropdown = SkillTreeConfig.Priority2 or "Left",
-    Priority3Dropdown = SkillTreeConfig.Priority3 or "None",
+    MiddlePathDropdown = KaitunConfig.AutoSkillTree or "RawDamage",
     P1GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige1 or 0),
     P2GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige2 or 0),
     P3GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige3 or 0),
     P4GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige4 or 0),
     P5GoldInput = tostring(KaitunConfig.PrestigeGold and KaitunConfig.PrestigeGold.Prestige5 or 0),
-    SelectFamily = KaitunConfig.SelectFamilies or "",
-    SelectFamilyRarity = KaitunConfig.FamilyRarities or {},
     WebhookUrl = KaitunConfig.WebhookUrl or "",
     ShadowBanWebhookUrl = KaitunConfig.ShadowBanWebhookUrl or "",
 }
@@ -2476,8 +2417,6 @@ local function MakeControl(id, value)
         self.Value = newValue
         for _, fn in ipairs(self._callbacks) do task.defer(fn) end
     end
-    function control:SetVisible() return self end
-    function control:SetDisabled() return self end
     function control:AddKeyPicker() return self end
     return control
 end
@@ -5660,3 +5599,4 @@ end
 
 
 sendLog()
+
