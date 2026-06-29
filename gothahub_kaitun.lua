@@ -2376,6 +2376,82 @@ local function FormatNumber(value)
     return str
 end
 
+local lastStatusDataProbe = 0
+local function FindSlotInData(data, preferredSlot)
+    if type(data) ~= "table" or type(data.Slots) ~= "table" then return nil, preferredSlot end
+
+    local candidates = {
+        preferredSlot,
+        tostring(preferredSlot or ""),
+        data.Current_Slot,
+        tostring(data.Current_Slot or ""),
+        KaitunConfig.AutoSlot,
+        tostring(KaitunConfig.AutoSlot or ""),
+    }
+
+    for _, slotId in ipairs(candidates) do
+        if slotId and slotId ~= "" and type(data.Slots[slotId]) == "table" then
+            return data.Slots[slotId], slotId
+        end
+    end
+
+    for slotId, slot in pairs(data.Slots) do
+        if type(slot) == "table" and (type(slot.Progression) == "table" or type(slot.Currency) == "table") then
+            return slot, slotId
+        end
+    end
+
+    return nil, preferredSlot
+end
+
+local function ReadKaitunPlayerData()
+    if type(lastPlayerData) == "table" and type(lastPlayerData.Slots) == "table" then
+        return lastPlayerData
+    end
+
+    local attempts = {
+        { "S_Equipment", "Talents" },
+        { "Functions", "Settings", "Get" },
+        { "Data", "Copy" },
+    }
+
+    for _, args in ipairs(attempts) do
+        local ok, result = pcall(function()
+            return getRemote:InvokeServer(unpack(args))
+        end)
+        if ok and type(result) == "table" and type(result.Slots) == "table" then
+            lastPlayerData = result
+            lastPlayerDataTime = os.clock()
+            return result
+        end
+    end
+
+    if game.PlaceId == 14916516914 and os.clock() - lastStatusDataProbe > 20 then
+        lastStatusDataProbe = os.clock()
+        pcall(function()
+            postRemote:FireServer("Functions", "Switch", "2D")
+        end)
+        task.wait(0.35)
+        pcall(function()
+            getRemote:InvokeServer("Functions", "Select", tostring(KaitunConfig.AutoSlot or "A"))
+        end)
+        task.wait(0.35)
+
+        for _, args in ipairs(attempts) do
+            local ok, result = pcall(function()
+                return getRemote:InvokeServer(unpack(args))
+            end)
+            if ok and type(result) == "table" and type(result.Slots) == "table" then
+                lastPlayerData = result
+                lastPlayerDataTime = os.clock()
+                return result
+            end
+        end
+    end
+
+    return nil
+end
+
 local function KaitunSetStatus(text)
     statusLine.Text = FormatRuntime() .. " (v1.0b)"
     statusGame.Text = tostring(text or "Idle")
@@ -2388,26 +2464,10 @@ function UpdateStatus(text)
 end
 
 local function RefreshKaitunStats()
-    local data = lastPlayerData
-    if type(data) ~= "table" or type(data.Slots) ~= "table" then
-        for _, args in ipairs({
-            { "S_Equipment", "Talents" },
-            { "Functions", "Settings", "Get" },
-            { "Data", "Copy" },
-        }) do
-            local ok, result = pcall(function()
-                return getRemote:InvokeServer(unpack(args))
-            end)
-            if ok and type(result) == "table" and type(result.Slots) == "table" then
-                data = result
-                lastPlayerData = result
-                lastPlayerDataTime = os.clock()
-                break
-            end
-        end
-    end
+    local data = ReadKaitunPlayerData()
     local slotId = lp:GetAttribute("Slot") or (type(data) == "table" and data.Current_Slot) or KaitunConfig.AutoSlot or "A"
-    local slot = type(data) == "table" and type(data.Slots) == "table" and (data.Slots[slotId] or data.Slots[tostring(slotId)]) or nil
+    local slot = nil
+    slot, slotId = FindSlotInData(data, slotId)
     if type(slot) == "table" then
         local progression = slot.Progression or {}
         local currency = slot.Currency or {}
@@ -3607,16 +3667,22 @@ Toggles.AutoStartToggle:OnChanged(function()
 					selected[modifier] = true
 				end
 
+				for _ = 1, 20 do
+					if getMyMission() then break end
+					task.wait(0.15)
+				end
+				task.wait(0.75)
+
 				for _, modifier in ipairs(modifierOrder) do
 					if selected[modifier] then
 						pcall(function()
 							getRemote:InvokeServer("S_Missions", "Modify", modifier)
 						end)
-						task.wait(0.3)
+						task.wait(0.45)
 					end
 				end
 
-				task.wait(1)
+				task.wait(1.25)
 				local canVerify = false
 				for attempt = 1, 3 do
 					if not getgenv().AutoStart then return false end
@@ -3635,7 +3701,7 @@ Toggles.AutoStartToggle:OnChanged(function()
 									pcall(function()
 										getRemote:InvokeServer("S_Missions", "Modify", modifier)
 									end)
-									task.wait(0.3)
+									task.wait(0.45)
 								end
 							end
 						end
