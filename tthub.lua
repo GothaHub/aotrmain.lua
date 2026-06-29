@@ -106,6 +106,7 @@ getgenv().AutoSellPerksEnabled = false
 getgenv().AutoSkillTree = false
 getgenv().AutoStart = false
 getgenv().AutoChest = false
+getgenv().AutoBuyBoostGems = false
 getgenv().AutoRetry = false
 getgenv().AutoSkip = false
 getgenv().AutoPrestige = false
@@ -126,6 +127,7 @@ getgenv().LastTitanWaitSecs = 60
 getgenv().OpenSecondChest = false
 getgenv().DeleteMap = DropdownConfig.DeleteMap or false
 getgenv().AutoSellPerks = DropdownConfig.AutoSellPerks or { Common = true, Rare = true, Epic = false, Legendary = false, Mythic = false }
+getgenv().AutoBuyBoostGemsConfig = DropdownConfig.AutoBuyBoostGems or { BoostType = "Gold", Duration = "30M", OnlyWhenExpired = true }
 getgenv().AdminConfig = false
 getgenv().HideDamageText = false
 if not isfile(returnCounterPath) then writefile(returnCounterPath, "0") end
@@ -2632,6 +2634,128 @@ end)
 
 FeaturesGroup:AddDivider()
 
+local BoostMarketItems = {
+	XP = {
+		["30M"] = { Index = 1, Item = "2x XP Boost [30m]" },
+		["1H"] = { Index = 2, Item = "2x XP Boost [1h]" },
+		["2H"] = { Index = 3, Item = "2x XP Boost [2h]" },
+	},
+	Luck = {
+		["30M"] = { Index = 4, Item = "2x Luck Boost [30m]" },
+		["1H"] = { Index = 5, Item = "2x Luck Boost [1h]" },
+		["2H"] = { Index = 6, Item = "2x Luck Boost [2h]" },
+	},
+	Gold = {
+		["30M"] = { Index = 7, Item = "2x Gold Boost [30m]" },
+		["1H"] = { Index = 8, Item = "2x Gold Boost [1h]" },
+		["2H"] = { Index = 9, Item = "2x Gold Boost [2h]" },
+	},
+}
+
+local function ReadBoostPlayerData()
+	local attempts = {
+		{ "Functions", "Settings", "Get" },
+		{ "Data", "Copy" },
+		{ "S_Equipment", "Talents" },
+	}
+
+	for _, args in ipairs(attempts) do
+		local ok, result = pcall(function()
+			return getRemote:InvokeServer(unpack(args))
+		end)
+
+		if ok and type(result) == "table" then
+			return result
+		end
+
+		task.wait(0.15)
+	end
+
+	return nil
+end
+
+local function IsBoostExpired(data, boostType)
+	local boosts = type(data) == "table" and data.Boosts or nil
+	local value = type(boosts) == "table" and tonumber(boosts[boostType]) or nil
+	if not value or value <= 0 then return true end
+	return value <= os.time()
+end
+
+local function GetBoostUiMultiplier(boostType)
+	local interface = PlayerGui:FindFirstChild("Interface")
+	local gearUp = interface and interface:FindFirstChild("Gear_Up")
+	local boosts = gearUp and gearUp:FindFirstChild("Boosts")
+	local boostFrame = boosts and boosts:FindFirstChild(boostType)
+	local main = boostFrame and boostFrame:FindFirstChild("Main")
+	local multiplier = main and main:FindFirstChild("Multiplier")
+	if not multiplier or not multiplier:IsA("TextLabel") then return nil end
+
+	local value = tonumber((multiplier.Text or ""):match("([%d%.]+)"))
+	return value
+end
+
+local function IsBoostActiveFromUi(boostType)
+	local value = GetBoostUiMultiplier(boostType)
+	if not value then return nil end
+	-- Permanent prestige/family boosts can show values like 1.15x.
+	-- A consumable boost is the 2x layer, so treat roughly 2x+ as active.
+	return value >= 1.9
+end
+
+local function UseBoostItem(itemName)
+	local ok, result = pcall(function()
+		return getRemote:InvokeServer("S_Inventory", "Item", itemName)
+	end)
+	return ok and result ~= nil and result ~= false, result
+end
+
+local function BuyBoostWithGems(boostType, duration)
+	local info = BoostMarketItems[boostType] and BoostMarketItems[boostType][duration]
+	if not info then return false, nil, nil end
+
+	local ok, result = pcall(function()
+		return getRemote:InvokeServer("S_Market", "Buy", "1_Boosts", info.Index, 1)
+	end)
+
+	if ok and type(result) == "table" then
+		return true, result, info.Item
+	end
+
+	return false, result, info.Item
+end
+
+local function BuyAndUseBoostIfNeeded()
+	local cfg = getgenv().AutoBuyBoostGemsConfig or {}
+	local boostType = cfg.BoostType or "Gold"
+	local duration = cfg.Duration or "30M"
+	local data = ReadBoostPlayerData()
+
+	if cfg.OnlyWhenExpired ~= false then
+		if data then
+			if not IsBoostExpired(data, boostType) then return "active" end
+		else
+			local uiActive = IsBoostActiveFromUi(boostType)
+			if uiActive == true then return "active_ui" end
+			if uiActive == nil then return "data_failed" end
+		end
+	end
+
+	local info = BoostMarketItems[boostType] and BoostMarketItems[boostType][duration]
+	if not info then return "invalid" end
+
+	local used = UseBoostItem(info.Item)
+	if used then return "used" end
+
+	local bought, buyResult, itemName = BuyBoostWithGems(boostType, duration)
+	if not bought then
+		return type(buyResult) == "string" and buyResult or "buy_failed"
+	end
+
+	task.wait(0.35)
+	local usedAfterBuy = UseBoostItem(itemName)
+	return usedAfterBuy and "bought_used" or "bought"
+end
+
 FeaturesGroup:AddToggle("AutoBoostToggle", {
 	Text = "Auto Use Boosts",
 	Default = false,
@@ -2674,6 +2798,97 @@ FeaturesGroup:AddDropdown("BoostSelectDropdown", {
 	Multi = true,
 	Text = "Boosts to Auto Use",
 	Tooltip = "Select which boost types to automatically use"
+})
+
+local boostBuyConfig = getgenv().AutoBuyBoostGemsConfig or {}
+
+FeaturesGroup:AddToggle("AutoBuyBoostGemsToggle", {
+	Text = "Auto Buy Boost Gems",
+	Default = false,
+	Tooltip = "Buys one selected boost with gems, then uses it."
+})
+Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
+	getgenv().AutoBuyBoostGems = Toggles.AutoBuyBoostGemsToggle.Value
+	if not getgenv().AutoBuyBoostGems then return end
+
+	task.spawn(function()
+		if getgenv().AutoBuyBoostGemsRunning then return end
+		getgenv().AutoBuyBoostGemsRunning = true
+
+		while getgenv().AutoBuyBoostGems do
+			if game.PlaceId ~= 14916516914 then
+				Library:Notify({ Title = "Auto Buy Boost", Description = "Works in lobby!", Time = 3 })
+				getgenv().AutoBuyBoostGems = false
+				Toggles.AutoBuyBoostGemsToggle:SetValue(false)
+				break
+			end
+
+			local status = BuyAndUseBoostIfNeeded()
+			if status == "bought_used" then
+				Library:Notify({ Title = "Auto Buy Boost", Description = "Bought and used boost.", Time = 3 })
+				task.wait(60)
+			elseif status == "used" then
+				Library:Notify({ Title = "Auto Buy Boost", Description = "Used boost from inventory.", Time = 3 })
+				task.wait(60)
+			elseif status == "active" or status == "active_ui" then
+				task.wait(60)
+			else
+				Library:Notify({ Title = "Auto Buy Boost", Description = tostring(status), Time = 3 })
+				task.wait(60)
+			end
+		end
+
+		getgenv().AutoBuyBoostGemsRunning = false
+	end)
+end)
+
+FeaturesGroup:AddDropdown("BuyBoostTypeDropdown", {
+	Values = {"Gold", "Luck", "XP"},
+	Default = table.find({"Gold", "Luck", "XP"}, boostBuyConfig.BoostType or "Gold") or 1,
+	Multi = false,
+	Text = "Buy Boost Type",
+})
+Options.BuyBoostTypeDropdown:OnChanged(function()
+	getgenv().AutoBuyBoostGemsConfig.BoostType = Options.BuyBoostTypeDropdown.Value or "Gold"
+	DropdownConfig.AutoBuyBoostGems = getgenv().AutoBuyBoostGemsConfig
+	SaveConfig(DropdownConfig)
+end)
+
+FeaturesGroup:AddDropdown("BuyBoostDurationDropdown", {
+	Values = {"30M", "1H", "2H"},
+	Default = table.find({"30M", "1H", "2H"}, boostBuyConfig.Duration or "30M") or 1,
+	Multi = false,
+	Text = "Buy Boost Duration",
+})
+Options.BuyBoostDurationDropdown:OnChanged(function()
+	getgenv().AutoBuyBoostGemsConfig.Duration = Options.BuyBoostDurationDropdown.Value or "30M"
+	DropdownConfig.AutoBuyBoostGems = getgenv().AutoBuyBoostGemsConfig
+	SaveConfig(DropdownConfig)
+end)
+
+FeaturesGroup:AddToggle("BuyBoostOnlyExpiredToggle", {
+	Text = "Only When Expired",
+	Default = boostBuyConfig.OnlyWhenExpired ~= false,
+	Tooltip = "Prevents buying while the selected boost is still active."
+})
+Toggles.BuyBoostOnlyExpiredToggle:OnChanged(function()
+	getgenv().AutoBuyBoostGemsConfig.OnlyWhenExpired = Toggles.BuyBoostOnlyExpiredToggle.Value
+	DropdownConfig.AutoBuyBoostGems = getgenv().AutoBuyBoostGemsConfig
+	SaveConfig(DropdownConfig)
+end)
+
+FeaturesGroup:AddButton({
+	Text = "Buy/Use Boost Now",
+	Func = function()
+		if game.PlaceId ~= 14916516914 then
+			Library:Notify({ Title = "Auto Buy Boost", Description = "Must be in lobby!", Time = 3 })
+			return
+		end
+
+		local status = BuyAndUseBoostIfNeeded()
+		Library:Notify({ Title = "Auto Buy Boost", Description = tostring(status), Time = 4 })
+	end,
+	Tooltip = "Buys and uses the selected boost if allowed by Only When Expired."
 })
 
 FeaturesGroup:AddButton({
