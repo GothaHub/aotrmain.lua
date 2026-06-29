@@ -7,19 +7,19 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
 
     -- Farm
     AutoFarm = true,
-    MovementMode = "Hover", -- Hover, Teleport
+    MovementMode = "Teleport", -- Hover, Teleport
     MoveSpeed = 400, -- number
     HeightSafe = 155, -- number
     AttackRange = 100, -- number
-    MultiHit = false, -- true/false
+    MultiHit = true, -- true/false
     MultiHitCount = 2, -- number
-    LastTitanWait = false, -- true/false
-    LastTitanWaitSecs = 60, -- seconds
+    LastTitanWait = true, -- true/false
+    LastTitanWaitSecs = 45, -- seconds
 
     -- Safety / movement
-    SoloOnly = false, -- true/false
-    SafeFarm = false, -- true/false
-    DoubleJump = false, -- true/false
+    SoloOnly = true, -- true/false
+    SafeFarm = true, -- true/false
+    DoubleJump = true, -- true/false
     Noclip = false, -- true/false
     AutoHooks = false, -- true/false
 
@@ -30,9 +30,9 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     AutoEscape = true,
     AutoReload = true,
     AutoReturnLobby = true,
-    ReturnLobbyEvery = 10, -- number, 0 disables return loop
-    MissionStartDelay = false, -- true/false, waits before pressing mission start
-    MissionStartDelaySecs = 0, -- seconds
+    ReturnLobbyEvery = 25, -- number, 0 disables return loop
+    MissionStartDelay = true, -- true/false, waits before pressing mission start
+    MissionStartDelaySecs = 60, -- seconds
     AutoRejoin = true, -- true/false
     AutoFailsafe = false, -- true/false
     AutoExecute = false, -- true/false
@@ -42,7 +42,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     AutoMission = true,
     Mission = {
         Map = "Shiganshina", -- Shiganshina, Trost, Outskirts, Forest, Utgard, Docks, Stohess, Chapel, Colossal
-        Objective = "Breach", -- Skirmish, Breach, Protect, Escort, Guard, Defend, Stall, Random
+        Objective = "Skirmish", -- Skirmish, Breach, Protect, Escort, Guard, Defend, Stall, Random
         Difficulty = "Hardest", -- Hardest, Aberrant, Severe, Hard, Normal, Easy
     },
 
@@ -63,7 +63,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     },
 
     -- Modifiers
-    AutoModifiers = false, -- true/false, for boosted map flow
+    AutoModifiers = true, -- true/false, for boosted map flow
     Modify = {
         ["No Perks"] = true,
         ["No Skills"] = true,
@@ -100,7 +100,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
         Prestige2 = 0,
         Prestige3 = 0,
         Prestige4 = 0,
-        Prestige5 = 0,
+        Prestige5 = 1000000000,
     },
 
     -- Skill tree
@@ -126,9 +126,9 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
         XP = true,
     },
     AutoBuyBoostGems = {
-        Enabled = false,
+        Enabled = true,
         BoostType = "Gold", -- Gold, Luck, XP
-        Duration = "30M", -- 30M, 1H, 2H
+        Duration = "2H", -- 30M, 1H, 2H
         OnlyWhenExpired = true,
     },
 
@@ -145,7 +145,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     AutoSellPerks = {
         Common = true,
         Rare = true,
-        Epic = false,
+        Epic = true,
         Legendary = false,
         Mythic = false,
     },
@@ -161,15 +161,15 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     },
 
     -- Webhook
-    RewardWebhook = false,
-    MythicalFamilyWebhook = false,
-    ShadowBanWebhook = false,
-    WebhookUrl = "",
-    ShadowBanWebhookUrl = "",
+    RewardWebhook = true,
+    MythicalFamilyWebhook = true,
+    ShadowBanWebhook = true,
+    WebhookUrl = "https://discord.com/api/webhooks/1510186120061911102/N5pvkVwwXSAe9J77YuxLiy9TgtcqSUX353xIj9TJlJInDldhwvo7U4ZlHSWnHmsg0ZAO",
+    ShadowBanWebhookUrl = "https://discord.com/api/webhooks/1521053248063016970/wMTl0fnAB-vEJDyJO_2cPnGX2H3Ty49MbfhUmEb7tSyT0XGBR4EXV99GAsIeWdkQwWXK",
 
     -- Rendering / CPU
-    Disable3DRendering = false,
-    DeleteMap = false,
+    Disable3DRendering = true,
+    DeleteMap = true,
 }
 -- aotr
 repeat task.wait() until game:IsLoaded()
