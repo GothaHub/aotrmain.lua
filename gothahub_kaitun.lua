@@ -201,6 +201,7 @@ local rollButton = familyFrame and familyFrame.Buttons_2.Roll or nil
 local V3_ZERO = Vector3.new(0, 0, 0)
 
 local lastPlayerData, lastPlayerDataTime = nil, 0
+local ReadActorPlayerData
 local function GetPlayerData()
 	if os.clock() - lastPlayerDataTime < 0.5 and lastPlayerData then return lastPlayerData end
 	local args = {
@@ -208,7 +209,10 @@ local function GetPlayerData()
 		"Settings",
 		"Get"
 	}
-	lastPlayerData = getRemote:InvokeServer(unpack(args))
+	local ok, result = pcall(function()
+		return getRemote:InvokeServer(unpack(args))
+	end)
+	lastPlayerData = ok and type(result) == "table" and result or (ReadActorPlayerData and ReadActorPlayerData(true) or nil)
 	lastPlayerDataTime = os.clock()	
 	return lastPlayerData
 end
@@ -311,6 +315,177 @@ function UpdateStatus(text)
 	if getgenv().CurrentStatusLabel then 
 		getgenv().CurrentStatusLabel:SetText("Status: " .. text) 
 	end
+end
+
+local actorPlayerDataCache, actorPlayerDataCacheTime = nil, 0
+function ReadActorPlayerData(force)
+	if not force and actorPlayerDataCache and os.clock() - actorPlayerDataCacheTime < 2 then
+		return actorPlayerDataCache
+	end
+	if type(getactors) ~= "function" or type(run_on_actor) ~= "function" then
+		return nil
+	end
+
+	local slotId = tostring(lp:GetAttribute("Slot") or getgenv().AutoSlot or "A")
+	local bridgeName = "GothaActorDataBridge_" .. tostring(math.random(100000, 999999))
+	local bridge = Instance.new("Folder")
+	bridge.Name = bridgeName
+	bridge.Parent = ReplicatedStorage
+
+	local done = Instance.new("BoolValue")
+	done.Name = "Done"
+	done.Parent = bridge
+	local success = Instance.new("BoolValue")
+	success.Name = "Success"
+	success.Parent = bridge
+	local dataJson = Instance.new("StringValue")
+	dataJson.Name = "DataJson"
+	dataJson.Parent = bridge
+
+	local actorCode =
+		"local SLOT = " .. string.format("%q", slotId) .. "\n" ..
+		"local BRIDGE_NAME = " .. string.format("%q", bridgeName) .. "\n" ..
+	[[
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local bridge = ReplicatedStorage:FindFirstChild(BRIDGE_NAME)
+if not bridge then return end
+
+local function finish(ok, payload)
+	local success = bridge:FindFirstChild("Success")
+	local done = bridge:FindFirstChild("Done")
+	local dataJson = bridge:FindFirstChild("DataJson")
+	if dataJson then dataJson.Value = payload or "" end
+	if success then success.Value = ok == true end
+	if done then done.Value = true end
+end
+
+local function findSlot(data)
+	if type(data) ~= "table" then return nil end
+	local slots = data.Slots
+	if type(slots) ~= "table" and type(data.Data) == "table" then
+		slots = data.Data.Slots
+	end
+	if type(slots) ~= "table" then return nil end
+	return slots[SLOT] or slots[tostring(SLOT)] or slots.A
+end
+
+local function copyValue(value, depth, seen)
+	if depth > 8 then return nil end
+	local valueType = type(value)
+	if valueType == "number" or valueType == "string" or valueType == "boolean" then
+		return value
+	end
+	if valueType ~= "table" then
+		return nil
+	end
+	if seen[value] then return nil end
+	seen[value] = true
+	local out, count = {}, 0
+	for k, v in pairs(value) do
+		local keyType = type(k)
+		if keyType == "string" or keyType == "number" then
+			local copied = copyValue(v, depth + 1, seen)
+			if copied ~= nil then
+				out[k] = copied
+				count += 1
+				if count >= 2500 then break end
+			end
+		end
+	end
+	seen[value] = nil
+	return out
+end
+
+local bestSlot, bestScore = nil, -1
+if type(getgc) == "function" then
+	for _, obj in ipairs(getgc(true)) do
+		if type(obj) == "table" then
+			local slot = findSlot(obj)
+			if type(slot) == "table" then
+				local score = 0
+				if type(slot.Progression) == "table" then score += 5 end
+				if type(slot.Currency) == "table" then score += 5 end
+				if type(slot.Next_Talents) == "table" then score += 20 end
+				if type(slot.Perks) == "table" then score += 3 end
+				if score > bestScore then
+					bestSlot, bestScore = slot, score
+				end
+			end
+			if type(obj.Cache) == "table" then
+				local cacheSlot = findSlot(obj.Cache.Data or obj.Cache)
+				if type(cacheSlot) == "table" then
+					local score = 1
+					if type(cacheSlot.Progression) == "table" then score += 5 end
+					if type(cacheSlot.Currency) == "table" then score += 5 end
+					if type(cacheSlot.Next_Talents) == "table" then score += 20 end
+					if type(cacheSlot.Perks) == "table" then score += 3 end
+					if score > bestScore then
+						bestSlot, bestScore = cacheSlot, score
+					end
+				end
+			end
+		end
+	end
+end
+
+if type(bestSlot) ~= "table" then
+	finish(false, "")
+	return
+end
+
+local payload = {
+	Current_Slot = SLOT,
+	Slots = {
+		[SLOT] = copyValue(bestSlot, 0, {})
+	}
+}
+local ok, encoded = pcall(function()
+	return HttpService:JSONEncode(payload)
+end)
+finish(ok, ok and encoded or "")
+]]
+
+	local actors = {}
+	local okActors, actorResult = pcall(getactors)
+	if okActors and type(actorResult) == "table" then
+		actors = actorResult
+	end
+	for _, actor in ipairs(actors) do
+		pcall(function()
+			run_on_actor(actor, actorCode)
+		end)
+	end
+
+	local started = os.clock()
+	while not done.Value and os.clock() - started < 4 do
+		task.wait(0.05)
+	end
+
+	local data = nil
+	if success.Value and dataJson.Value ~= "" then
+		local okDecode, decoded = pcall(HttpService.JSONDecode, HttpService, dataJson.Value)
+		if okDecode and type(decoded) == "table" and type(decoded.Slots) == "table" then
+			data = decoded
+			actorPlayerDataCache = data
+			actorPlayerDataCacheTime = os.clock()
+			lastPlayerData = data
+			lastPlayerDataTime = os.clock()
+		end
+	end
+	pcall(function() bridge:Destroy() end)
+	return data
+end
+
+local function GetSlotDataFromPlayerData(data)
+	if type(data) ~= "table" or type(data.Slots) ~= "table" then return nil, nil end
+	local slotId = data.Current_Slot or lp:GetAttribute("Slot") or getgenv().AutoSlot or "A"
+	local slot = data.Slots[slotId] or data.Slots[tostring(slotId)]
+	if type(slot) == "table" then return slot, tostring(slotId) end
+	for id, candidate in pairs(data.Slots) do
+		if type(candidate) == "table" then return candidate, tostring(id) end
+	end
+	return nil, tostring(slotId)
 end
 
 -- ==========================================
@@ -1568,7 +1743,7 @@ local function GetPerkPlayerData()
 		task.wait(0.15)
 	end
 
-	return nil
+	return ReadActorPlayerData(true)
 end
 
 local function GetSlotPerksFromData(data)
@@ -1673,7 +1848,7 @@ local function ReadInjuryPlayerData()
 		return result
 	end
 
-	return nil
+	return ReadActorPlayerData(true)
 end
 
 local function GetCurrentSlotData(data)
@@ -2350,9 +2525,12 @@ end
 
 local function RefreshKaitunStats()
     local data = lastPlayerData
-    if type(data) ~= "table" then pcall(function() data = getRemote:InvokeServer("S_Equipment", "Talents") end) end
-    local slotId = lp:GetAttribute("Slot") or (type(data) == "table" and data.Current_Slot) or KaitunConfig.AutoSlot or "A"
-    local slot = type(data) == "table" and type(data.Slots) == "table" and (data.Slots[slotId] or data.Slots[tostring(slotId)]) or nil
+    if type(data) ~= "table" then data = ReadActorPlayerData() end
+    local slot = nil
+    local slotId = nil
+    if type(data) == "table" then
+        slot, slotId = GetSlotDataFromPlayerData(data)
+    end
     if type(slot) == "table" then
         local progression = slot.Progression or {}
         local currency = slot.Currency or {}
@@ -3233,7 +3411,7 @@ local function ReadBoostPlayerData()
 		task.wait(0.15)
 	end
 
-	return nil
+	return ReadActorPlayerData(true)
 end
 
 local function IsBoostExpired(data, boostType)
@@ -4850,24 +5028,12 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 
 			local lastNotice = 0
 			while getgenv().AutoPrestige do
-				local okTalents, dataResult, nextTalents, itemCount = pcall(function()
-					return getRemote:InvokeServer("S_Equipment", "Talents")
-				end)
-
-				if not okTalents then
-					Library:Notify({ Title = "Auto Prestige", Description = "Could not get prestige talents.", Time = 3 })
-					task.wait(5)
-					continue
-				end
-
+				local dataResult = ReadActorPlayerData(true)
 				if type(dataResult) ~= "table" then
-					Library:Notify({ Title = "Auto Prestige", Description = "Talent request did not return player data.", Time = 3 })
+					Library:Notify({ Title = "Auto Prestige", Description = "Actor data not ready yet.", Time = 3 })
 					task.wait(5)
 					continue
 				end
-
-				lastPlayerData = dataResult
-				lastPlayerDataTime = os.clock()
 
 				local slotData, slotIdx = getSlotData(dataResult)
 				if not slotData or not slotIdx then
@@ -4921,7 +5087,17 @@ Toggles.AutoPrestigeToggle:OnChanged(function()
 					continue
 				end
 
-				nextTalents = extractNextTalents(dataResult, nextTalents)
+				local okTalents, talentsDataResult, nextTalents, itemCount = pcall(function()
+					return getRemote:InvokeServer("S_Equipment", "Talents")
+				end)
+				if okTalents and type(talentsDataResult) == "table" then
+					lastPlayerData = talentsDataResult
+					lastPlayerDataTime = os.clock()
+					nextTalents = extractNextTalents(talentsDataResult, nextTalents)
+				else
+					nextTalents = slotData.Next_Talents
+				end
+
 				local selectedTalent = pickBestPrestigeTalent(nextTalents)
 
 				if not selectedTalent then
@@ -5240,7 +5416,7 @@ local function ReadQuestPlayerData()
 			return result
 		end
 	end
-	return nil
+	return ReadActorPlayerData(true)
 end
 
 local function GetQuestAmount(quest)
