@@ -371,7 +371,7 @@ local function findSlot(data)
 end
 
 local function copyValue(value, depth, seen)
-	if depth > 8 then return nil end
+	if depth > 5 then return nil end
 	local valueType = type(value)
 	if valueType == "number" or valueType == "string" or valueType == "boolean" then
 		return value
@@ -389,7 +389,7 @@ local function copyValue(value, depth, seen)
 			if copied ~= nil then
 				out[k] = copied
 				count += 1
-				if count >= 2500 then break end
+				if count >= 900 then break end
 			end
 		end
 	end
@@ -397,7 +397,7 @@ local function copyValue(value, depth, seen)
 	return out
 end
 
-local function collectShadowFields(root, slot)
+local function collectShadowFields(slot)
 	local out = {}
 	local wanted = {
 		Blacklisted = true, blacklisted = true,
@@ -406,24 +406,17 @@ local function collectShadowFields(root, slot)
 		shadowBan = true, shadowBanned = true, shadowban = true,
 		Banned = true, banned = true, Ban = true, ban = true,
 	}
-	local seen = {}
-	local function scan(tbl, depth)
-		if type(tbl) ~= "table" or depth > 5 or seen[tbl] then return end
-		seen[tbl] = true
-		for k, v in pairs(tbl) do
+	if type(slot) == "table" then
+		for k, v in pairs(slot) do
 			if wanted[k] and (type(v) == "boolean" or type(v) == "number" or type(v) == "string") then
 				out[tostring(k)] = v
-			elseif type(v) == "table" then
-				scan(v, depth + 1)
 			end
 		end
 	end
-	scan(root, 0)
-	scan(slot, 0)
 	return out
 end
 
-local bestSlot, bestScore, bestRoot = nil, -1, nil
+local bestSlot, bestScore = nil, -1
 if type(getgc) == "function" then
 	for _, obj in ipairs(getgc(true)) do
 		if type(obj) == "table" then
@@ -435,7 +428,7 @@ if type(getgc) == "function" then
 				if type(slot.Next_Talents) == "table" then score += 20 end
 				if type(slot.Perks) == "table" then score += 3 end
 				if score > bestScore then
-					bestSlot, bestScore, bestRoot = slot, score, obj
+					bestSlot, bestScore = slot, score
 				end
 			end
 			if type(obj.Cache) == "table" then
@@ -447,7 +440,7 @@ if type(getgc) == "function" then
 					if type(cacheSlot.Next_Talents) == "table" then score += 20 end
 					if type(cacheSlot.Perks) == "table" then score += 3 end
 					if score > bestScore then
-						bestSlot, bestScore, bestRoot = cacheSlot, score, obj.Cache.Data or obj.Cache
+						bestSlot, bestScore = cacheSlot, score
 					end
 				end
 			end
@@ -460,11 +453,22 @@ if type(bestSlot) ~= "table" then
 	return
 end
 
+local slotPayload = {
+	Progression = copyValue(bestSlot.Progression, 0, {}) or {},
+	Currency = copyValue(bestSlot.Currency, 0, {}) or {},
+	Next_Talents = copyValue(bestSlot.Next_Talents, 0, {}),
+	Perks = copyValue(bestSlot.Perks, 0, {}),
+	Injuries = copyValue(bestSlot.Injuries, 0, {}),
+	Quests = copyValue(bestSlot.Quests, 0, {}),
+	Boosts = copyValue(bestSlot.Boosts, 0, {}),
+	Inventory = type(bestSlot.Inventory) == "table" and { Items = copyValue(bestSlot.Inventory.Items, 0, {}) } or nil,
+}
+
 local payload = {
 	Current_Slot = SLOT,
-	Meta = collectShadowFields(bestRoot, bestSlot),
+	Meta = collectShadowFields(bestSlot),
 	Slots = {
-		[SLOT] = copyValue(bestSlot, 0, {})
+		[SLOT] = slotPayload
 	}
 }
 local ok, encoded = pcall(function()
@@ -1295,8 +1299,8 @@ local function FindShadowValue(container, names)
 	return nil
 end
 
-local function GetShadowBanInfo()
-	local data = ReadActorPlayerData and ReadActorPlayerData() or nil
+local function GetShadowBanInfo(dataOverride)
+	local data = type(dataOverride) == "table" and dataOverride or (ReadActorPlayerData and ReadActorPlayerData() or nil)
 	local slot = type(data) == "table" and select(1, GetSlotDataFromPlayerData(data)) or nil
 	local meta = type(data) == "table" and data.Meta or nil
 
@@ -2612,7 +2616,7 @@ local function RefreshKaitunStats()
         statusStats.Text = "Level: " .. tostring(progression.Level or "?") .. " | Gold: " .. FormatNumber(currency.Gold) .. " | Gems: " .. FormatNumber(currency.Gems)
         statusMission.Text = tostring(MissionConfig.Map or RaidConfig.Map or WavesConfig.Map or "?") .. " | " .. GetStartTypeFromConfig() .. " | Prestige: " .. tostring(progression.Prestige or 0)
     end
-    local shadowInfo = GetShadowBanInfo()
+    local shadowInfo = GetShadowBanInfo(data)
     if shadowInfo and shadowInfo.Status ~= "Clean" then
         statusShadow.TextColor3 = Color3.fromRGB(255, 95, 95)
         statusShadow.Text = "Shadow Ban: ❌ ShadowBanned"
