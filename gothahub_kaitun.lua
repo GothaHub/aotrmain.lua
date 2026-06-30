@@ -397,7 +397,33 @@ local function copyValue(value, depth, seen)
 	return out
 end
 
-local bestSlot, bestScore = nil, -1
+local function collectShadowFields(root, slot)
+	local out = {}
+	local wanted = {
+		Blacklisted = true, blacklisted = true,
+		Exploiter = true, exploiter = true,
+		ShadowBan = true, ShadowBanned = true, Shadowban = true,
+		shadowBan = true, shadowBanned = true, shadowban = true,
+		Banned = true, banned = true, Ban = true, ban = true,
+	}
+	local seen = {}
+	local function scan(tbl, depth)
+		if type(tbl) ~= "table" or depth > 5 or seen[tbl] then return end
+		seen[tbl] = true
+		for k, v in pairs(tbl) do
+			if wanted[k] and (type(v) == "boolean" or type(v) == "number" or type(v) == "string") then
+				out[tostring(k)] = v
+			elseif type(v) == "table" then
+				scan(v, depth + 1)
+			end
+		end
+	end
+	scan(root, 0)
+	scan(slot, 0)
+	return out
+end
+
+local bestSlot, bestScore, bestRoot = nil, -1, nil
 if type(getgc) == "function" then
 	for _, obj in ipairs(getgc(true)) do
 		if type(obj) == "table" then
@@ -409,7 +435,7 @@ if type(getgc) == "function" then
 				if type(slot.Next_Talents) == "table" then score += 20 end
 				if type(slot.Perks) == "table" then score += 3 end
 				if score > bestScore then
-					bestSlot, bestScore = slot, score
+					bestSlot, bestScore, bestRoot = slot, score, obj
 				end
 			end
 			if type(obj.Cache) == "table" then
@@ -421,7 +447,7 @@ if type(getgc) == "function" then
 					if type(cacheSlot.Next_Talents) == "table" then score += 20 end
 					if type(cacheSlot.Perks) == "table" then score += 3 end
 					if score > bestScore then
-						bestSlot, bestScore = cacheSlot, score
+						bestSlot, bestScore, bestRoot = cacheSlot, score, obj.Cache.Data or obj.Cache
 					end
 				end
 			end
@@ -436,6 +462,7 @@ end
 
 local payload = {
 	Current_Slot = SLOT,
+	Meta = collectShadowFields(bestRoot, bestSlot),
 	Slots = {
 		[SLOT] = copyValue(bestSlot, 0, {})
 	}
@@ -1249,11 +1276,43 @@ local gamesPlayed = tonumber(readfile(path))
 local webhook
 local shadowBanWebhook
 
+local function ShadowValueTruthy(value)
+	if value == true then return true end
+	if type(value) == "number" then return value ~= 0 end
+	if type(value) == "string" then
+		local text = value:lower()
+		return text == "true" or text == "yes" or text == "1" or text == "banned" or text == "shadowbanned" or text == "flagged"
+	end
+	return false
+end
+
+local function FindShadowValue(container, names)
+	if type(container) ~= "table" then return nil end
+	for _, name in ipairs(names) do
+		local value = container[name]
+		if value ~= nil then return value end
+	end
+	return nil
+end
+
 local function GetShadowBanInfo()
-	local blacklisted = lp:GetAttribute("Blacklisted") == true
-	local exploiter = lp:GetAttribute("Exploiter") == true
-	local level = tostring(lp:GetAttribute("Level") or "N/A")
-	local prestige = tostring(lp:GetAttribute("Prestige") or "N/A")
+	local data = ReadActorPlayerData and ReadActorPlayerData() or nil
+	local slot = type(data) == "table" and select(1, GetSlotDataFromPlayerData(data)) or nil
+	local meta = type(data) == "table" and data.Meta or nil
+
+	local blacklistedValue = lp:GetAttribute("Blacklisted")
+	if blacklistedValue == nil then blacklistedValue = FindShadowValue(meta, { "Blacklisted", "blacklisted", "ShadowBan", "ShadowBanned", "Shadowban", "shadowBan", "shadowBanned", "shadowban", "Banned", "banned", "Ban", "ban" }) end
+	if blacklistedValue == nil then blacklistedValue = FindShadowValue(slot, { "Blacklisted", "blacklisted", "ShadowBan", "ShadowBanned", "Shadowban", "shadowBan", "shadowBanned", "shadowban", "Banned", "banned", "Ban", "ban" }) end
+
+	local exploiterValue = lp:GetAttribute("Exploiter")
+	if exploiterValue == nil then exploiterValue = FindShadowValue(meta, { "Exploiter", "exploiter" }) end
+	if exploiterValue == nil then exploiterValue = FindShadowValue(slot, { "Exploiter", "exploiter" }) end
+
+	local blacklisted = ShadowValueTruthy(blacklistedValue)
+	local exploiter = ShadowValueTruthy(exploiterValue)
+	local progression = type(slot) == "table" and slot.Progression or {}
+	local level = tostring(progression.Level or lp:GetAttribute("Level") or "N/A")
+	local prestige = tostring(progression.Prestige or lp:GetAttribute("Prestige") or "N/A")
 	local flags = (blacklisted and 1 or 0) + (exploiter and 1 or 0)
 	local status = flags == 0 and "Clean" or (flags == 1 and "Flagged" or "Banned")
 
@@ -1263,6 +1322,7 @@ local function GetShadowBanInfo()
 		Level = level,
 		Prestige = prestige,
 		Status = status,
+		Source = type(meta) == "table" and "Actor" or "Attributes",
 		Text = "Blacklisted: " .. (blacklisted and "YES" or "No") .. "\n" ..
 			"Exploiter: " .. (exploiter and "YES" or "No") .. "\n" ..
 			"Level: " .. level .. "\n" ..
@@ -2467,9 +2527,21 @@ local statusFrame = Instance.new("Frame")
 statusFrame.Name = "Status"
 statusFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 statusFrame.Position = UDim2.fromScale(0.5, 0.28)
-statusFrame.Size = UDim2.fromOffset(520, 190)
-statusFrame.BackgroundTransparency = 1
+statusFrame.Size = UDim2.fromOffset(620, 245)
+statusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+statusFrame.BackgroundTransparency = 0.35
+statusFrame.BorderSizePixel = 0
 statusFrame.Parent = statusGui
+
+local statusCorner = Instance.new("UICorner")
+statusCorner.CornerRadius = UDim.new(0, 8)
+statusCorner.Parent = statusFrame
+
+local statusStroke = Instance.new("UIStroke")
+statusStroke.Color = Color3.fromRGB(255, 255, 255)
+statusStroke.Transparency = 0.75
+statusStroke.Thickness = 1
+statusStroke.Parent = statusFrame
 
 local function NewStatusLabel(name, y, height, font, color, text)
     local label = Instance.new("TextLabel")
@@ -2479,6 +2551,8 @@ local function NewStatusLabel(name, y, height, font, color, text)
     label.Size = UDim2.new(1, 0, 0, height)
     label.Font = font
     label.TextColor3 = color
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextStrokeTransparency = 0.15
     label.TextScaled = true
     label.Text = text
     label.Parent = statusFrame
@@ -2486,11 +2560,12 @@ local function NewStatusLabel(name, y, height, font, color, text)
 end
 
 local statusTitle = NewStatusLabel("Title", 0, 34, Enum.Font.GothamBold, Color3.fromRGB(255, 70, 70), "GothaHub")
-local statusGame = NewStatusLabel("Game", 38, 28, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Attack Titans")
-local statusLine = NewStatusLabel("Runtime", 72, 28, Enum.Font.GothamSemibold, Color3.fromRGB(235, 235, 235), "Starting...")
-local statusStats = NewStatusLabel("Stats", 108, 24, Enum.Font.GothamBold, Color3.fromRGB(210, 255, 210), "Level: ? | Gold: ? | Gems: ?")
-local statusMission = NewStatusLabel("Mission", 138, 22, Enum.Font.GothamSemibold, Color3.fromRGB(230, 230, 230), "Loading config...")
-local statusFooter = NewStatusLabel("Footer", 164, 22, Enum.Font.GothamBold, Color3.fromRGB(235, 235, 235), "GOTHAHUB KAITUN")
+local statusGame = NewStatusLabel("Activity", 38, 30, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Starting...")
+local statusLine = NewStatusLabel("Runtime", 74, 28, Enum.Font.GothamSemibold, Color3.fromRGB(245, 245, 245), "Starting...")
+local statusStats = NewStatusLabel("Stats", 110, 26, Enum.Font.GothamBold, Color3.fromRGB(210, 255, 210), "Level: ? | Gold: ? | Gems: ?")
+local statusMission = NewStatusLabel("Mission", 142, 24, Enum.Font.GothamSemibold, Color3.fromRGB(235, 235, 235), "Loading config...")
+local statusShadow = NewStatusLabel("Shadow", 172, 24, Enum.Font.GothamBold, Color3.fromRGB(160, 255, 170), "Shadow Ban: ?")
+local statusFooter = NewStatusLabel("Footer", 202, 24, Enum.Font.GothamBold, Color3.fromRGB(235, 235, 235), "GOTHAHUB KAITUN")
 
 local kaitunStartTime = os.clock()
 local function FormatRuntime()
@@ -2514,7 +2589,7 @@ end
 
 local function KaitunSetStatus(text)
     statusLine.Text = FormatRuntime() .. " (v1.0b)"
-    statusMission.Text = tostring(text or "Idle")
+    statusGame.Text = tostring(text or "Idle")
 end
 
 local oldUpdateStatus = UpdateStatus
@@ -2536,6 +2611,14 @@ local function RefreshKaitunStats()
         local currency = slot.Currency or {}
         statusStats.Text = "Level: " .. tostring(progression.Level or "?") .. " | Gold: " .. FormatNumber(currency.Gold) .. " | Gems: " .. FormatNumber(currency.Gems)
         statusMission.Text = tostring(MissionConfig.Map or RaidConfig.Map or WavesConfig.Map or "?") .. " | " .. GetStartTypeFromConfig() .. " | Prestige: " .. tostring(progression.Prestige or 0)
+    end
+    local shadowInfo = GetShadowBanInfo()
+    if shadowInfo and shadowInfo.Status ~= "Clean" then
+        statusShadow.TextColor3 = Color3.fromRGB(255, 95, 95)
+        statusShadow.Text = "Shadow Ban: ❌ ShadowBanned"
+    else
+        statusShadow.TextColor3 = Color3.fromRGB(160, 255, 170)
+        statusShadow.Text = "Shadow Ban: ✅ Safe"
     end
 end
 
