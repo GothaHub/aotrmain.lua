@@ -3935,9 +3935,6 @@ AutoStartGroup:AddDropdown("MissionMapDropdown", {
 Options.MissionMapDropdown:OnChanged(function()
 	local Value = Options.MissionMapDropdown.Value
 	if not Value then return end
-	if Options.MissionObjectiveDropdown and Options.MissionObjectiveDropdown.SetValues then
-		Options.MissionObjectiveDropdown:SetValues(Missions[Value] or {})
-	end
 	DropdownConfig.Missions = DropdownConfig.Missions or {}
 	DropdownConfig.Missions.map = Value
 	SaveConfig(DropdownConfig)
@@ -3987,9 +3984,6 @@ AutoStartGroup:AddDropdown("RaidMapDropdown", {
 Options.RaidMapDropdown:OnChanged(function()
 	local Value = Options.RaidMapDropdown.Value
 	if not Value then return end
-	if Options.RaidObjectiveDropdown and Options.RaidObjectiveDropdown.SetValues then
-		Options.RaidObjectiveDropdown:SetValues(Missions[Value] or {})
-	end
 	DropdownConfig.Raids = DropdownConfig.Raids or {}
 	DropdownConfig.Raids.map = Value
 	SaveConfig(DropdownConfig)
