@@ -89,7 +89,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     -- Lobby maintenance
     AutoClaimAchievements = true,
     AutoClaimQuests = true,
-    AutoInjury = true,
+    AutoInjury = false,
     AutoUpgrade = true,
 
     -- Prestige
