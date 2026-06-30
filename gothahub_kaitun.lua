@@ -2468,17 +2468,23 @@ statusFrame.Name = "Status"
 statusFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 statusFrame.Position = UDim2.fromScale(0.5, 0.28)
 statusFrame.Size = UDim2.fromOffset(520, 190)
-statusFrame.BackgroundTransparency = 1
+statusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+statusFrame.BackgroundTransparency = 0.45
+statusFrame.BorderSizePixel = 0
+statusFrame.ZIndex = 10000
 statusFrame.Parent = statusGui
 
 local function NewStatusLabel(name, y, height, font, color, text)
     local label = Instance.new("TextLabel")
     label.Name = name
     label.BackgroundTransparency = 1
+    label.ZIndex = 10001
     label.Position = UDim2.fromOffset(0, y)
     label.Size = UDim2.new(1, 0, 0, height)
     label.Font = font
     label.TextColor3 = color
+    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextStrokeTransparency = 0.25
     label.TextScaled = true
     label.Text = text
     label.Parent = statusFrame
@@ -2486,7 +2492,7 @@ local function NewStatusLabel(name, y, height, font, color, text)
 end
 
 local statusTitle = NewStatusLabel("Title", 0, 34, Enum.Font.GothamBold, Color3.fromRGB(255, 70, 70), "GothaHub")
-local statusGame = NewStatusLabel("Game", 38, 28, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Attack Titans")
+local statusGame = NewStatusLabel("Game", 38, 28, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Starting...")
 local statusLine = NewStatusLabel("Runtime", 72, 28, Enum.Font.GothamSemibold, Color3.fromRGB(235, 235, 235), "Starting...")
 local statusStats = NewStatusLabel("Stats", 108, 24, Enum.Font.GothamBold, Color3.fromRGB(210, 255, 210), "Level: ? | Gold: ? | Gems: ?")
 local statusMission = NewStatusLabel("Mission", 138, 22, Enum.Font.GothamSemibold, Color3.fromRGB(230, 230, 230), "Loading config...")
@@ -2514,7 +2520,7 @@ end
 
 local function KaitunSetStatus(text)
     statusLine.Text = FormatRuntime() .. " (v1.0b)"
-    statusMission.Text = tostring(text or "Idle")
+    statusGame.Text = tostring(text or "Idle")
 end
 
 local oldUpdateStatus = UpdateStatus
@@ -3393,32 +3399,34 @@ local BoostMarketItems = {
 }
 
 local function ReadBoostPlayerData()
-	local attempts = {
-		{ "Functions", "Settings", "Get" },
-		{ "Data", "Copy" },
-		{ "S_Equipment", "Talents" },
-	}
-
-	for _, args in ipairs(attempts) do
-		local ok, result = pcall(function()
-			return getRemote:InvokeServer(unpack(args))
-		end)
-
-		if ok and type(result) == "table" then
-			return result
+	for _ = 1, 4 do
+		local data = ReadActorPlayerData(true)
+		if type(data) == "table" then
+			return data
 		end
-
-		task.wait(0.15)
+		task.wait(0.25)
 	end
 
-	return ReadActorPlayerData(true)
+	return nil
+end
+
+local function GetBoostExpiryValue(data, boostType)
+	if type(data) ~= "table" then return nil end
+
+	local boosts = type(data.Boosts) == "table" and data.Boosts or nil
+	if not boosts then
+		local slot = GetSlotDataFromPlayerData(data)
+		boosts = type(slot) == "table" and type(slot.Boosts) == "table" and slot.Boosts or nil
+	end
+	if type(boosts) ~= "table" then return nil end
+
+	return tonumber(boosts[boostType] or boosts[boostType .. " Boost"])
 end
 
 local function IsBoostExpired(data, boostType)
-	local boosts = type(data) == "table" and data.Boosts or nil
-	local value = type(boosts) == "table" and tonumber(boosts[boostType]) or nil
-	if not value or value <= 0 then return true end
-	return value <= os.time()
+	local value = GetBoostExpiryValue(data, boostType)
+	if value == nil then return nil end
+	return value <= 0
 end
 
 local function GetBoostUiMultiplier(boostType)
@@ -3471,12 +3479,13 @@ local function BuyAndUseBoostIfNeeded()
 	local data = ReadBoostPlayerData()
 
 	if cfg.OnlyWhenExpired ~= false then
-		if data then
-			if not IsBoostExpired(data, boostType) then return "active" end
-		else
+		local expired = IsBoostExpired(data, boostType)
+		if expired == false then
+			return "active"
+		elseif expired == nil then
 			local uiActive = IsBoostActiveFromUi(boostType)
 			if uiActive == true then return "active_ui" end
-			if uiActive == nil then return "data_failed" end
+			return "data_failed"
 		end
 	end
 
