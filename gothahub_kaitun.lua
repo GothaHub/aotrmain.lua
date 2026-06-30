@@ -371,7 +371,7 @@ local function findSlot(data)
 end
 
 local function copyValue(value, depth, seen)
-	if depth > 5 then return nil end
+	if depth > 8 then return nil end
 	local valueType = type(value)
 	if valueType == "number" or valueType == "string" or valueType == "boolean" then
 		return value
@@ -389,30 +389,11 @@ local function copyValue(value, depth, seen)
 			if copied ~= nil then
 				out[k] = copied
 				count += 1
-				if count >= 900 then break end
+				if count >= 2500 then break end
 			end
 		end
 	end
 	seen[value] = nil
-	return out
-end
-
-local function collectShadowFields(slot)
-	local out = {}
-	local wanted = {
-		Blacklisted = true, blacklisted = true,
-		Exploiter = true, exploiter = true,
-		ShadowBan = true, ShadowBanned = true, Shadowban = true,
-		shadowBan = true, shadowBanned = true, shadowban = true,
-		Banned = true, banned = true, Ban = true, ban = true,
-	}
-	if type(slot) == "table" then
-		for k, v in pairs(slot) do
-			if wanted[k] and (type(v) == "boolean" or type(v) == "number" or type(v) == "string") then
-				out[tostring(k)] = v
-			end
-		end
-	end
 	return out
 end
 
@@ -453,22 +434,10 @@ if type(bestSlot) ~= "table" then
 	return
 end
 
-local slotPayload = {
-	Progression = copyValue(bestSlot.Progression, 0, {}) or {},
-	Currency = copyValue(bestSlot.Currency, 0, {}) or {},
-	Next_Talents = copyValue(bestSlot.Next_Talents, 0, {}),
-	Perks = copyValue(bestSlot.Perks, 0, {}),
-	Injuries = copyValue(bestSlot.Injuries, 0, {}),
-	Quests = copyValue(bestSlot.Quests, 0, {}),
-	Boosts = copyValue(bestSlot.Boosts, 0, {}),
-	Inventory = type(bestSlot.Inventory) == "table" and { Items = copyValue(bestSlot.Inventory.Items, 0, {}) } or nil,
-}
-
 local payload = {
 	Current_Slot = SLOT,
-	Meta = collectShadowFields(bestSlot),
 	Slots = {
-		[SLOT] = slotPayload
+		[SLOT] = copyValue(bestSlot, 0, {})
 	}
 }
 local ok, encoded = pcall(function()
@@ -1280,43 +1249,11 @@ local gamesPlayed = tonumber(readfile(path))
 local webhook
 local shadowBanWebhook
 
-local function ShadowValueTruthy(value)
-	if value == true then return true end
-	if type(value) == "number" then return value ~= 0 end
-	if type(value) == "string" then
-		local text = value:lower()
-		return text == "true" or text == "yes" or text == "1" or text == "banned" or text == "shadowbanned" or text == "flagged"
-	end
-	return false
-end
-
-local function FindShadowValue(container, names)
-	if type(container) ~= "table" then return nil end
-	for _, name in ipairs(names) do
-		local value = container[name]
-		if value ~= nil then return value end
-	end
-	return nil
-end
-
-local function GetShadowBanInfo(dataOverride)
-	local data = type(dataOverride) == "table" and dataOverride or (ReadActorPlayerData and ReadActorPlayerData() or nil)
-	local slot = type(data) == "table" and select(1, GetSlotDataFromPlayerData(data)) or nil
-	local meta = type(data) == "table" and data.Meta or nil
-
-	local blacklistedValue = lp:GetAttribute("Blacklisted")
-	if blacklistedValue == nil then blacklistedValue = FindShadowValue(meta, { "Blacklisted", "blacklisted", "ShadowBan", "ShadowBanned", "Shadowban", "shadowBan", "shadowBanned", "shadowban", "Banned", "banned", "Ban", "ban" }) end
-	if blacklistedValue == nil then blacklistedValue = FindShadowValue(slot, { "Blacklisted", "blacklisted", "ShadowBan", "ShadowBanned", "Shadowban", "shadowBan", "shadowBanned", "shadowban", "Banned", "banned", "Ban", "ban" }) end
-
-	local exploiterValue = lp:GetAttribute("Exploiter")
-	if exploiterValue == nil then exploiterValue = FindShadowValue(meta, { "Exploiter", "exploiter" }) end
-	if exploiterValue == nil then exploiterValue = FindShadowValue(slot, { "Exploiter", "exploiter" }) end
-
-	local blacklisted = ShadowValueTruthy(blacklistedValue)
-	local exploiter = ShadowValueTruthy(exploiterValue)
-	local progression = type(slot) == "table" and slot.Progression or {}
-	local level = tostring(progression.Level or lp:GetAttribute("Level") or "N/A")
-	local prestige = tostring(progression.Prestige or lp:GetAttribute("Prestige") or "N/A")
+local function GetShadowBanInfo()
+	local blacklisted = lp:GetAttribute("Blacklisted") == true
+	local exploiter = lp:GetAttribute("Exploiter") == true
+	local level = tostring(lp:GetAttribute("Level") or "N/A")
+	local prestige = tostring(lp:GetAttribute("Prestige") or "N/A")
 	local flags = (blacklisted and 1 or 0) + (exploiter and 1 or 0)
 	local status = flags == 0 and "Clean" or (flags == 1 and "Flagged" or "Banned")
 
@@ -1326,7 +1263,6 @@ local function GetShadowBanInfo(dataOverride)
 		Level = level,
 		Prestige = prestige,
 		Status = status,
-		Source = type(meta) == "table" and "Actor" or "Attributes",
 		Text = "Blacklisted: " .. (blacklisted and "YES" or "No") .. "\n" ..
 			"Exploiter: " .. (exploiter and "YES" or "No") .. "\n" ..
 			"Level: " .. level .. "\n" ..
@@ -1580,7 +1516,7 @@ if rewards then
 						}
 					},
 					footer = {
-						text = "GOTHAHUB â€¢ " .. DateTime.now():FormatLocalTime("LTS", "en-us")
+						text = "GOTHAHUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us")
 					},
 					timestamp = DateTime.now():ToIsoDate()
 				}}
@@ -2060,7 +1996,7 @@ if getgenv().AutoSkip then
         end
     end
     
-    -- âœ… ALWAYS TP to refill (chahe skip tha ya nahi)
+    -- ✅ ALWAYS TP to refill (chahe skip tha ya nahi)
     task.wait(0.5)
     pcall(function()
         local refillPart = getCachedRefillPart()
@@ -2072,7 +2008,7 @@ if getgenv().AutoSkip then
         end
     end)
 end
-	-- Auto Open Chests (US Suite logic â€” polling based, works even if event missed)
+	-- Auto Open Chests (US Suite logic — polling based, works even if event missed)
 	-- Auto Open Chests (ULTRA FIX - forces both chests to open)
 if getgenv().AutoChest then
     local chests = INTERFACE:FindFirstChild("Chests")
@@ -2277,7 +2213,7 @@ local function roll(targets, rarities)
 			end
 
 			local payload = {
-				content = isRareMythical and "ğŸ”¥ RARE MYTHICAL! @everyone" or "âœ¨ MYTHICAL FAMILY! @everyone",
+				content = isRareMythical and "🔥 RARE MYTHICAL! @everyone" or "✨ MYTHICAL FAMILY! @everyone",
 				embeds = {{
 					title = "Family Roll",
 					color = isRareMythical and 16711680 or 16750848,
@@ -2287,12 +2223,12 @@ local function roll(targets, rarities)
 							value = "```\n" ..
 								"User: " .. lp.Name .. "\n" ..
 								"Family: " .. tostring(familyString) .. "\n" ..
-								"Rare Mythical: " .. (isRareMythical and "YES ğŸ”¥" or "No") .. "\n" ..
+								"Rare Mythical: " .. (isRareMythical and "YES 🔥" or "No") .. "\n" ..
 								"\n```",
 							inline = true
 						}
 					},
-					footer = { text = "GOTHAHUB â€¢ " .. DateTime.now():FormatLocalTime("LTS", "en-us") },
+					footer = { text = "GOTHAHUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us") },
 					timestamp = DateTime.now():ToIsoDate()
 				}}
 			}
@@ -2889,12 +2825,12 @@ MiscGroup:AddButton({
 		local lv = tostring(lp:GetAttribute("Level") or "N/A")
 		local pr = tostring(lp:GetAttribute("Prestige") or "N/A")
 		local flags = (bl and 1 or 0) + (ex and 1 or 0)
-		local res = flags == 0 and "âœ… Clean" or (flags == 1 and "âš ï¸ Flagged" or "ğŸš« Banned")
+		local res = flags == 0 and "✅ Clean" or (flags == 1 and "⚠️ Flagged" or "🚫 Banned")
 		Library:Notify({
 			Title = "Shadow Ban Check",
 			Description = 
-				"Blacklisted: " .. (bl and "YES âŒ" or "No âœ…") ..
-				"\nExploiter: " .. (ex and "YES âŒ" or "No âœ…") ..
+				"Blacklisted: " .. (bl and "YES ❌" or "No ✅") ..
+				"\nExploiter: " .. (ex and "YES ❌" or "No ✅") ..
 				"\nLevel: " .. lv ..
 				"\nPrestige: " .. pr ..
 				"\n\nStatus: " .. res,
@@ -3258,7 +3194,7 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 				if game.PlaceId ~= 14916516914 then
 					local currentBoostedMap = workspace:GetAttribute("Boosted_Map")
 					if currentBoostedMap and currentBoostedMap ~= lastBoostedMap then
-						Library:Notify({ Title = "ğŸ”„ Boost Changed!", Description = "New boost: " .. currentBoostedMap .. "\nReturning to lobby...", Time = 5 })
+						Library:Notify({ Title = "🔄 Boost Changed!", Description = "New boost: " .. currentBoostedMap .. "\nReturning to lobby...", Time = 5 })
 						if AutoFarm and AutoFarm._running then AutoFarm:Stop() end
 						pcall(function() getRemote:InvokeServer("Functions", "Teleport", "Lobby") end)
 						task.wait(0.5)
@@ -3276,7 +3212,7 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 				
 				if boostedMap and boostedMap ~= "" and boostedMap ~= lastBoostedMap then
 					lastBoostedMap = boostedMap
-					Library:Notify({ Title = "ğŸ¯ Boost Found!", Description = "Map: " .. boostedMap .. " | Time: " .. tostring(boostedTimer or "N/A") .. "s", Time = 5 })
+					Library:Notify({ Title = "🎯 Boost Found!", Description = "Map: " .. boostedMap .. " | Time: " .. tostring(boostedTimer or "N/A") .. "s", Time = 5 })
 					
 					pcall(function()
 						for _, m in next, ReplicatedStorage.Missions:GetChildren() do
@@ -3314,7 +3250,7 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 						end
 						task.wait(1)
 						pcall(function() getRemote:InvokeServer("S_Missions", "Start") end)
-						Library:Notify({ Title = "âœ… Farming Boosted Map!", Description = "Map: " .. boostedMap, Time = 3 })
+						Library:Notify({ Title = "✅ Farming Boosted Map!", Description = "Map: " .. boostedMap, Time = 3 })
 					end
 				else
 					task.wait(5)
@@ -3580,7 +3516,7 @@ Toggles.AutoBoostToggle:OnChanged(function()
 					return getRemote:InvokeServer("S_Inventory", "Item", itemName)
 				end)
 				if ok and result ~= nil and result ~= false then
-					Library:Notify({ Title = "Auto Boost", Description = "âœ… " .. itemName, Time = 3 })
+					Library:Notify({ Title = "Auto Boost", Description = "✅ " .. itemName, Time = 3 })
 					return true
 				end
 			end
@@ -3713,7 +3649,7 @@ FeaturesGroup:AddButton({
 							return getRemote:InvokeServer("S_Inventory", "Item", itemName)
 						end)
 						if ok and result ~= nil and result ~= false then
-							Library:Notify({ Title = "Auto Boost", Description = "âœ… " .. itemName, Time = 3 })
+							Library:Notify({ Title = "Auto Boost", Description = "✅ " .. itemName, Time = 3 })
 							used += 1
 							break
 						end
@@ -4201,7 +4137,7 @@ Toggles.AFKFarmingBreachToggle:OnChanged(function()
         pcall(function() Toggles.AutoHideToggle:SetValue(true) end)
         
         Library:Notify({
-            Title = "âš™ï¸ AFK Farming (Breach) Applied!",
+            Title = "⚙️ AFK Farming (Breach) Applied!",
             Description = "Shiganshina | Breach | Hardest\nAll 10 Mods | Solo | Teleport",
             Time = 5
         })
@@ -4271,7 +4207,7 @@ Toggles.AFKFarmingDefendToggle:OnChanged(function()
         pcall(function() Toggles.AutoHideToggle:SetValue(true) end)
         
         Library:Notify({
-            Title = "âš™ï¸ AFK Farming (Defend) Applied!",
+            Title = "⚙️ AFK Farming (Defend) Applied!",
             Description = "Utgard | Defend | Hardest\nAll 10 Mods | Solo | Teleport",
             Time = 5
         })
@@ -4342,7 +4278,7 @@ Toggles.AFKFarmingStallToggle:OnChanged(function()
         pcall(function() Toggles.AutoHideToggle:SetValue(true) end)
         
         Library:Notify({
-            Title = "âš™ï¸ AFK Farming (Stall) Applied!",
+            Title = "⚙️ AFK Farming (Stall) Applied!",
             Description = "Docks | Stall | Hardest\nAll 10 Mods | Solo | Teleport",
             Time = 5
         })
@@ -4420,11 +4356,11 @@ end)
 -- Configs Info
 ConfigsGroup:AddDivider()
 ConfigsGroup:AddLabel("Configs Summary:")
-ConfigsGroup:AddLabel("â€¢ Breach: AFK Farming")
-ConfigsGroup:AddLabel("â€¢ Defend: AFK Farming")
-ConfigsGroup:AddLabel("â€¢ Stall: AFK Farming")
-ConfigsGroup:AddLabel("â€¢ Waves: Auto")
-ConfigsGroup:AddLabel("â€¢ All: Hardest + 10 Mods + Solo")
+ConfigsGroup:AddLabel("• Breach: AFK Farming")
+ConfigsGroup:AddLabel("• Defend: AFK Farming")
+ConfigsGroup:AddLabel("• Stall: AFK Farming")
+ConfigsGroup:AddLabel("• Waves: Auto")
+ConfigsGroup:AddLabel("• All: Hardest + 10 Mods + Solo")
 
 
 -- ==========================================
@@ -4484,9 +4420,9 @@ Toggles.AutoUpgradeToggle:OnChanged(function()
             end
             if not anyDone then
                 Library:Notify({ Title = "Auto Upgrade", Description = "Slot " .. slot .. " fully maxed! Still checking...", Time = 3 })
-                -- âŒ getgenv().AutoUpgrade = false -- REMOVED
-                -- âŒ Toggles.AutoUpgradeToggle:SetValue(false) -- REMOVED
-                -- âŒ break -- REMOVED
+                -- ❌ getgenv().AutoUpgrade = false -- REMOVED
+                -- ❌ Toggles.AutoUpgradeToggle:SetValue(false) -- REMOVED
+                -- ❌ break -- REMOVED
                 task.wait(10) -- Check every 10s if all maxed
             else
                 task.wait(1)
@@ -4588,7 +4524,7 @@ Toggles.AutoEnhanceToggle:OnChanged(function()
 				end
 			end
 
-			-- Build food perks as DICT {[id] = qty} â€” server expects this format
+			-- Build food perks as DICT {[id] = qty} — server expects this format
 			local foodPerkDict = {}
 			local totalXPGain = 0
 			local count = 0
@@ -4871,7 +4807,7 @@ Toggles.AutoWavesToggle:OnChanged(function()
             AutoFarm:Start()
         end
     else
-        -- âœ… Stop farm when toggle OFF
+        -- ✅ Stop farm when toggle OFF
         if AutoFarm._running then
             AutoFarm:Stop()
         end
