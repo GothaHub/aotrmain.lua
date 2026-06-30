@@ -1580,7 +1580,7 @@ if rewards then
 						}
 					},
 					footer = {
-						text = "GOTHAHUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us")
+						text = "GOTHAHUB â€¢ " .. DateTime.now():FormatLocalTime("LTS", "en-us")
 					},
 					timestamp = DateTime.now():ToIsoDate()
 				}}
@@ -2060,7 +2060,7 @@ if getgenv().AutoSkip then
         end
     end
     
-    -- ✅ ALWAYS TP to refill (chahe skip tha ya nahi)
+    -- âœ… ALWAYS TP to refill (chahe skip tha ya nahi)
     task.wait(0.5)
     pcall(function()
         local refillPart = getCachedRefillPart()
@@ -2072,7 +2072,7 @@ if getgenv().AutoSkip then
         end
     end)
 end
-	-- Auto Open Chests (US Suite logic — polling based, works even if event missed)
+	-- Auto Open Chests (US Suite logic â€” polling based, works even if event missed)
 	-- Auto Open Chests (ULTRA FIX - forces both chests to open)
 if getgenv().AutoChest then
     local chests = INTERFACE:FindFirstChild("Chests")
@@ -2277,7 +2277,7 @@ local function roll(targets, rarities)
 			end
 
 			local payload = {
-				content = isRareMythical and "🔥 RARE MYTHICAL! @everyone" or "✨ MYTHICAL FAMILY! @everyone",
+				content = isRareMythical and "ğŸ”¥ RARE MYTHICAL! @everyone" or "âœ¨ MYTHICAL FAMILY! @everyone",
 				embeds = {{
 					title = "Family Roll",
 					color = isRareMythical and 16711680 or 16750848,
@@ -2287,12 +2287,12 @@ local function roll(targets, rarities)
 							value = "```\n" ..
 								"User: " .. lp.Name .. "\n" ..
 								"Family: " .. tostring(familyString) .. "\n" ..
-								"Rare Mythical: " .. (isRareMythical and "YES 🔥" or "No") .. "\n" ..
+								"Rare Mythical: " .. (isRareMythical and "YES ğŸ”¥" or "No") .. "\n" ..
 								"\n```",
 							inline = true
 						}
 					},
-					footer = { text = "GOTHAHUB • " .. DateTime.now():FormatLocalTime("LTS", "en-us") },
+					footer = { text = "GOTHAHUB â€¢ " .. DateTime.now():FormatLocalTime("LTS", "en-us") },
 					timestamp = DateTime.now():ToIsoDate()
 				}}
 			}
@@ -2531,21 +2531,9 @@ local statusFrame = Instance.new("Frame")
 statusFrame.Name = "Status"
 statusFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 statusFrame.Position = UDim2.fromScale(0.5, 0.28)
-statusFrame.Size = UDim2.fromOffset(620, 245)
-statusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-statusFrame.BackgroundTransparency = 0.35
-statusFrame.BorderSizePixel = 0
+statusFrame.Size = UDim2.fromOffset(520, 190)
+statusFrame.BackgroundTransparency = 1
 statusFrame.Parent = statusGui
-
-local statusCorner = Instance.new("UICorner")
-statusCorner.CornerRadius = UDim.new(0, 8)
-statusCorner.Parent = statusFrame
-
-local statusStroke = Instance.new("UIStroke")
-statusStroke.Color = Color3.fromRGB(255, 255, 255)
-statusStroke.Transparency = 0.75
-statusStroke.Thickness = 1
-statusStroke.Parent = statusFrame
 
 local function NewStatusLabel(name, y, height, font, color, text)
     local label = Instance.new("TextLabel")
@@ -2555,8 +2543,6 @@ local function NewStatusLabel(name, y, height, font, color, text)
     label.Size = UDim2.new(1, 0, 0, height)
     label.Font = font
     label.TextColor3 = color
-    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-    label.TextStrokeTransparency = 0.15
     label.TextScaled = true
     label.Text = text
     label.Parent = statusFrame
@@ -2564,12 +2550,11 @@ local function NewStatusLabel(name, y, height, font, color, text)
 end
 
 local statusTitle = NewStatusLabel("Title", 0, 34, Enum.Font.GothamBold, Color3.fromRGB(255, 70, 70), "GothaHub")
-local statusGame = NewStatusLabel("Activity", 38, 30, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Starting...")
-local statusLine = NewStatusLabel("Runtime", 74, 28, Enum.Font.GothamSemibold, Color3.fromRGB(245, 245, 245), "Starting...")
-local statusStats = NewStatusLabel("Stats", 110, 26, Enum.Font.GothamBold, Color3.fromRGB(210, 255, 210), "Level: ? | Gold: ? | Gems: ?")
-local statusMission = NewStatusLabel("Mission", 142, 24, Enum.Font.GothamSemibold, Color3.fromRGB(235, 235, 235), "Loading config...")
-local statusShadow = NewStatusLabel("Shadow", 172, 24, Enum.Font.GothamBold, Color3.fromRGB(160, 255, 170), "Shadow Ban: ?")
-local statusFooter = NewStatusLabel("Footer", 202, 24, Enum.Font.GothamBold, Color3.fromRGB(235, 235, 235), "GOTHAHUB KAITUN")
+local statusGame = NewStatusLabel("Game", 38, 28, Enum.Font.GothamBold, Color3.fromRGB(255, 218, 120), "Attack Titans")
+local statusLine = NewStatusLabel("Runtime", 72, 28, Enum.Font.GothamSemibold, Color3.fromRGB(235, 235, 235), "Starting...")
+local statusStats = NewStatusLabel("Stats", 108, 24, Enum.Font.GothamBold, Color3.fromRGB(210, 255, 210), "Level: ? | Gold: ? | Gems: ?")
+local statusMission = NewStatusLabel("Mission", 138, 22, Enum.Font.GothamSemibold, Color3.fromRGB(230, 230, 230), "Loading config...")
+local statusFooter = NewStatusLabel("Footer", 164, 22, Enum.Font.GothamBold, Color3.fromRGB(235, 235, 235), "GOTHAHUB KAITUN")
 
 local kaitunStartTime = os.clock()
 local function FormatRuntime()
@@ -2593,7 +2578,7 @@ end
 
 local function KaitunSetStatus(text)
     statusLine.Text = FormatRuntime() .. " (v1.0b)"
-    statusGame.Text = tostring(text or "Idle")
+    statusMission.Text = tostring(text or "Idle")
 end
 
 local oldUpdateStatus = UpdateStatus
@@ -2615,14 +2600,6 @@ local function RefreshKaitunStats()
         local currency = slot.Currency or {}
         statusStats.Text = "Level: " .. tostring(progression.Level or "?") .. " | Gold: " .. FormatNumber(currency.Gold) .. " | Gems: " .. FormatNumber(currency.Gems)
         statusMission.Text = tostring(MissionConfig.Map or RaidConfig.Map or WavesConfig.Map or "?") .. " | " .. GetStartTypeFromConfig() .. " | Prestige: " .. tostring(progression.Prestige or 0)
-    end
-    local shadowInfo = GetShadowBanInfo(data)
-    if shadowInfo and shadowInfo.Status ~= "Clean" then
-        statusShadow.TextColor3 = Color3.fromRGB(255, 95, 95)
-        statusShadow.Text = "Shadow Ban: ❌ ShadowBanned"
-    else
-        statusShadow.TextColor3 = Color3.fromRGB(160, 255, 170)
-        statusShadow.Text = "Shadow Ban: ✅ Safe"
     end
 end
 
@@ -2912,12 +2889,12 @@ MiscGroup:AddButton({
 		local lv = tostring(lp:GetAttribute("Level") or "N/A")
 		local pr = tostring(lp:GetAttribute("Prestige") or "N/A")
 		local flags = (bl and 1 or 0) + (ex and 1 or 0)
-		local res = flags == 0 and "✅ Clean" or (flags == 1 and "⚠️ Flagged" or "🚫 Banned")
+		local res = flags == 0 and "âœ… Clean" or (flags == 1 and "âš ï¸ Flagged" or "ğŸš« Banned")
 		Library:Notify({
 			Title = "Shadow Ban Check",
 			Description = 
-				"Blacklisted: " .. (bl and "YES ❌" or "No ✅") ..
-				"\nExploiter: " .. (ex and "YES ❌" or "No ✅") ..
+				"Blacklisted: " .. (bl and "YES âŒ" or "No âœ…") ..
+				"\nExploiter: " .. (ex and "YES âŒ" or "No âœ…") ..
 				"\nLevel: " .. lv ..
 				"\nPrestige: " .. pr ..
 				"\n\nStatus: " .. res,
@@ -3281,7 +3258,7 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 				if game.PlaceId ~= 14916516914 then
 					local currentBoostedMap = workspace:GetAttribute("Boosted_Map")
 					if currentBoostedMap and currentBoostedMap ~= lastBoostedMap then
-						Library:Notify({ Title = "🔄 Boost Changed!", Description = "New boost: " .. currentBoostedMap .. "\nReturning to lobby...", Time = 5 })
+						Library:Notify({ Title = "ğŸ”„ Boost Changed!", Description = "New boost: " .. currentBoostedMap .. "\nReturning to lobby...", Time = 5 })
 						if AutoFarm and AutoFarm._running then AutoFarm:Stop() end
 						pcall(function() getRemote:InvokeServer("Functions", "Teleport", "Lobby") end)
 						task.wait(0.5)
@@ -3299,7 +3276,7 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 				
 				if boostedMap and boostedMap ~= "" and boostedMap ~= lastBoostedMap then
 					lastBoostedMap = boostedMap
-					Library:Notify({ Title = "🎯 Boost Found!", Description = "Map: " .. boostedMap .. " | Time: " .. tostring(boostedTimer or "N/A") .. "s", Time = 5 })
+					Library:Notify({ Title = "ğŸ¯ Boost Found!", Description = "Map: " .. boostedMap .. " | Time: " .. tostring(boostedTimer or "N/A") .. "s", Time = 5 })
 					
 					pcall(function()
 						for _, m in next, ReplicatedStorage.Missions:GetChildren() do
@@ -3337,7 +3314,7 @@ Toggles.AutoJoinBoostedMapToggle:OnChanged(function()
 						end
 						task.wait(1)
 						pcall(function() getRemote:InvokeServer("S_Missions", "Start") end)
-						Library:Notify({ Title = "✅ Farming Boosted Map!", Description = "Map: " .. boostedMap, Time = 3 })
+						Library:Notify({ Title = "âœ… Farming Boosted Map!", Description = "Map: " .. boostedMap, Time = 3 })
 					end
 				else
 					task.wait(5)
@@ -3603,7 +3580,7 @@ Toggles.AutoBoostToggle:OnChanged(function()
 					return getRemote:InvokeServer("S_Inventory", "Item", itemName)
 				end)
 				if ok and result ~= nil and result ~= false then
-					Library:Notify({ Title = "Auto Boost", Description = "✅ " .. itemName, Time = 3 })
+					Library:Notify({ Title = "Auto Boost", Description = "âœ… " .. itemName, Time = 3 })
 					return true
 				end
 			end
@@ -3736,7 +3713,7 @@ FeaturesGroup:AddButton({
 							return getRemote:InvokeServer("S_Inventory", "Item", itemName)
 						end)
 						if ok and result ~= nil and result ~= false then
-							Library:Notify({ Title = "Auto Boost", Description = "✅ " .. itemName, Time = 3 })
+							Library:Notify({ Title = "Auto Boost", Description = "âœ… " .. itemName, Time = 3 })
 							used += 1
 							break
 						end
@@ -4224,7 +4201,7 @@ Toggles.AFKFarmingBreachToggle:OnChanged(function()
         pcall(function() Toggles.AutoHideToggle:SetValue(true) end)
         
         Library:Notify({
-            Title = "⚙️ AFK Farming (Breach) Applied!",
+            Title = "âš™ï¸ AFK Farming (Breach) Applied!",
             Description = "Shiganshina | Breach | Hardest\nAll 10 Mods | Solo | Teleport",
             Time = 5
         })
@@ -4294,7 +4271,7 @@ Toggles.AFKFarmingDefendToggle:OnChanged(function()
         pcall(function() Toggles.AutoHideToggle:SetValue(true) end)
         
         Library:Notify({
-            Title = "⚙️ AFK Farming (Defend) Applied!",
+            Title = "âš™ï¸ AFK Farming (Defend) Applied!",
             Description = "Utgard | Defend | Hardest\nAll 10 Mods | Solo | Teleport",
             Time = 5
         })
@@ -4365,7 +4342,7 @@ Toggles.AFKFarmingStallToggle:OnChanged(function()
         pcall(function() Toggles.AutoHideToggle:SetValue(true) end)
         
         Library:Notify({
-            Title = "⚙️ AFK Farming (Stall) Applied!",
+            Title = "âš™ï¸ AFK Farming (Stall) Applied!",
             Description = "Docks | Stall | Hardest\nAll 10 Mods | Solo | Teleport",
             Time = 5
         })
@@ -4443,11 +4420,11 @@ end)
 -- Configs Info
 ConfigsGroup:AddDivider()
 ConfigsGroup:AddLabel("Configs Summary:")
-ConfigsGroup:AddLabel("• Breach: AFK Farming")
-ConfigsGroup:AddLabel("• Defend: AFK Farming")
-ConfigsGroup:AddLabel("• Stall: AFK Farming")
-ConfigsGroup:AddLabel("• Waves: Auto")
-ConfigsGroup:AddLabel("• All: Hardest + 10 Mods + Solo")
+ConfigsGroup:AddLabel("â€¢ Breach: AFK Farming")
+ConfigsGroup:AddLabel("â€¢ Defend: AFK Farming")
+ConfigsGroup:AddLabel("â€¢ Stall: AFK Farming")
+ConfigsGroup:AddLabel("â€¢ Waves: Auto")
+ConfigsGroup:AddLabel("â€¢ All: Hardest + 10 Mods + Solo")
 
 
 -- ==========================================
@@ -4507,9 +4484,9 @@ Toggles.AutoUpgradeToggle:OnChanged(function()
             end
             if not anyDone then
                 Library:Notify({ Title = "Auto Upgrade", Description = "Slot " .. slot .. " fully maxed! Still checking...", Time = 3 })
-                -- ❌ getgenv().AutoUpgrade = false -- REMOVED
-                -- ❌ Toggles.AutoUpgradeToggle:SetValue(false) -- REMOVED
-                -- ❌ break -- REMOVED
+                -- âŒ getgenv().AutoUpgrade = false -- REMOVED
+                -- âŒ Toggles.AutoUpgradeToggle:SetValue(false) -- REMOVED
+                -- âŒ break -- REMOVED
                 task.wait(10) -- Check every 10s if all maxed
             else
                 task.wait(1)
@@ -4611,7 +4588,7 @@ Toggles.AutoEnhanceToggle:OnChanged(function()
 				end
 			end
 
-			-- Build food perks as DICT {[id] = qty} — server expects this format
+			-- Build food perks as DICT {[id] = qty} â€” server expects this format
 			local foodPerkDict = {}
 			local totalXPGain = 0
 			local count = 0
@@ -4894,7 +4871,7 @@ Toggles.AutoWavesToggle:OnChanged(function()
             AutoFarm:Start()
         end
     else
-        -- ✅ Stop farm when toggle OFF
+        -- âœ… Stop farm when toggle OFF
         if AutoFarm._running then
             AutoFarm:Stop()
         end
