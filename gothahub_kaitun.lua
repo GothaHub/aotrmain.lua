@@ -34,7 +34,8 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     MissionStartDelay = true, -- true/false, waits before pressing mission start
     MissionStartDelaySecs = 60, -- seconds
     AutoRejoin = true, -- true/false
-    AutoFailsafe = false, -- true/false
+    MissionFailsafe = true, -- true/false, missions only
+    MissionFailsafeTime = 180, -- seconds
     AutoExecute = false, -- true/false
     OpenSecondChest = false, -- true/false
 
@@ -89,7 +90,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     -- Lobby maintenance
     AutoClaimAchievements = true,
     AutoClaimQuests = true,
-    AutoInjury = false,
+    AutoInjury = true,
     AutoUpgrade = true,
 
     -- Prestige
@@ -288,6 +289,8 @@ getgenv().AutoRetry = false
 getgenv().AutoSkip = false
 getgenv().AutoPrestige = false
 getgenv().AutoFailsafe = false
+getgenv().MissionFailsafe = false
+getgenv().MissionFailsafeTime = 180
 getgenv().AutoExecute = false
 getgenv().RewardWebhook = false
 getgenv().MythicalFamilyWebhook = false
@@ -595,6 +598,7 @@ function AutoFarm:Start()
 	if isLobby then return end
 
 	self._running = true
+	self.missionStartTime = nil
 	task.spawn(function()
 		UpdateStatus("Waiting for mission...")
 		
@@ -704,12 +708,15 @@ function AutoFarm:Start()
 				getgenv().AutoFarmConfig.AttackCooldown = 1 
 			end
 
-			if getgenv().AutoFailsafe then
+			local currentMapType = workspace:GetAttribute("Type") or (mapData and mapData.Map and mapData.Map.Type)
+			if getgenv().MissionFailsafe and currentMapType == "Missions" then
 				if not self.missionStartTime then
 					self.missionStartTime = os.clock()
 				end
 				local missionElapsedTime = os.clock() - self.missionStartTime
-				if missionElapsedTime >= 900 then
+				local failsafeTime = tonumber(getgenv().MissionFailsafeTime) or 180
+				if failsafeTime > 0 and missionElapsedTime >= failsafeTime then
+					UpdateStatus("Mission failsafe: returning to lobby")
 					self:Stop()
 					task.spawn(function() getRemote:InvokeServer("Functions", "Teleport", "Lobby") end)
 					task.wait(0.5)
@@ -1136,6 +1143,7 @@ end
 
 function AutoFarm:Stop()
 	self._running = false
+	self.missionStartTime = nil
 	getgenv()._colossalCannonRunning = false
 	getgenv()._colossalPhase2Running = false
 end
@@ -1721,29 +1729,19 @@ local function GetPerkXP(rarity, level)
 end
 
 local function GetPerkPlayerData()
-	local attempts = {
-		{ "Functions", "Settings", "Get" },
-		{ "Data", "Copy" },
-		{ "S_Equipment", "Talents" },
-	}
-
-	for _, args in ipairs(attempts) do
-		local ok, result = pcall(function()
-			return getRemote:InvokeServer(unpack(args))
-		end)
-
-		if ok and type(result) == "table" and type(result.Slots) == "table" then
+	for _ = 1, 4 do
+		local result = ReadActorPlayerData(true)
+		if type(result) == "table" and type(result.Slots) == "table" then
 			local slotId = result.Current_Slot or lp:GetAttribute("Slot") or "A"
-			local slot = result.Slots[slotId]
+			local slot = result.Slots[slotId] or result.Slots[tostring(slotId)]
 			if type(slot) == "table" and type(slot.Perks) == "table" then
 				return result
 			end
 		end
-
-		task.wait(0.15)
+		task.wait(0.25)
 	end
 
-	return ReadActorPlayerData(true)
+	return nil
 end
 
 local function GetSlotPerksFromData(data)
@@ -1838,17 +1836,17 @@ local function SellAutoPerksOnce()
 end
 
 local function ReadInjuryPlayerData()
-	local ok, result = pcall(function()
-		return getRemote:InvokeServer("S_Equipment", "Talents")
-	end)
-
-	if ok and type(result) == "table" and type(result.Slots) == "table" then
-		lastPlayerData = result
-		lastPlayerDataTime = os.clock()
-		return result
+	for _ = 1, 4 do
+		local result = ReadActorPlayerData(true)
+		if type(result) == "table" and type(result.Slots) == "table" then
+			lastPlayerData = result
+			lastPlayerDataTime = os.clock()
+			return result
+		end
+		task.wait(0.25)
 	end
 
-	return ReadActorPlayerData(true)
+	return nil
 end
 
 local function GetCurrentSlotData(data)
@@ -1883,7 +1881,8 @@ local function CollectInjuryCandidates()
 
 	if type(injuries) == "table" then
 		for injuryName, value in pairs(injuries) do
-			if value ~= nil and value ~= false then
+			local active = value == true or (type(value) == "table" and value.State == true)
+			if active then
 				if type(value) == "string" then
 					AddInjuryCandidate(candidates, seen, value)
 				elseif type(injuryName) == "string" then
@@ -2449,6 +2448,9 @@ getgenv().MultiHitCount = KaitunConfig.MultiHitCount or getgenv().MultiHitCount
 getgenv().DieAtStreak = KaitunConfig.DieAtStreak == true
 getgenv().DieAtStreakCount = KaitunConfig.DieAtStreakCount or getgenv().DieAtStreakCount
 getgenv().AutoRejoin = KaitunConfig.AutoRejoin == true
+getgenv().MissionFailsafe = KaitunConfig.MissionFailsafe == true
+getgenv().MissionFailsafeTime = tonumber(KaitunConfig.MissionFailsafeTime) or getgenv().MissionFailsafeTime
+getgenv().AutoFailsafe = getgenv().MissionFailsafe
 if getgenv().AutoFarmConfig then
     getgenv().AutoFarmConfig.MovementMode = KaitunConfig.MovementMode or getgenv().AutoFarmConfig.MovementMode
     getgenv().AutoFarmConfig.MoveSpeed = KaitunConfig.MoveSpeed or getgenv().AutoFarmConfig.MoveSpeed
@@ -2604,7 +2606,7 @@ local ToggleOverrides = {
 local OptionOverrides = {
     FarmOptionsDropdown = {
         ["Auto Execute"] = KaitunConfig.AutoExecute == true,
-        ["Failsafe"] = KaitunConfig.AutoFailsafe == true,
+        ["Failsafe"] = KaitunConfig.MissionFailsafe == true,
         ["Open Second Chest"] = KaitunConfig.OpenSecondChest == true,
     },
     StartTypeDropdown = GetStartTypeFromConfig(),
@@ -2623,6 +2625,7 @@ local OptionOverrides = {
     LastTitanWaitSlider = KaitunConfig.LastTitanWaitSecs or 60,
     WaitBeforeStartSlider = KaitunConfig.MissionStartDelaySecs or 0,
     DieAtStreakSlider = KaitunConfig.DieAtStreakCount or 5,
+    MissionFailsafeTimeSlider = KaitunConfig.MissionFailsafeTime or 180,
     ReturnAfterGamesSlider = KaitunConfig.ReturnLobbyEvery or 10,
     MasteryModeDropdown = KaitunConfig.MasteryMode or "Both",
     SelectSlotDropdown = "Slot " .. tostring(KaitunConfig.AutoSlot or "A"),
@@ -3174,13 +3177,26 @@ SecurityGroup:AddDropdown("FarmOptionsDropdown", {
 })
 Options.FarmOptionsDropdown:OnChanged(function()
 	local vals = Options.FarmOptionsDropdown.Value
-	getgenv().AutoFailsafe = vals["Failsafe"] or false
+	getgenv().MissionFailsafe = vals["Failsafe"] or false
+	getgenv().AutoFailsafe = getgenv().MissionFailsafe
 	getgenv().AutoExecute = vals["Auto Execute"] or false
 	getgenv().OpenSecondChest = vals["Open Second Chest"] or false
 	if getgenv().AutoExecute then setupAutoExecute() end
 end)
 
-SecurityGroup:AddLabel("Failsafe tps you back to lobby\nafter a timeout.")
+SecurityGroup:AddSlider("MissionFailsafeTimeSlider", {
+	Text = "Mission failsafe time",
+	Default = 180,
+	Min = 60,
+	Max = 900,
+	Rounding = 0,
+	Tooltip = "Returns to lobby if a mission is not cleared in this many seconds"
+})
+Options.MissionFailsafeTimeSlider:OnChanged(function()
+	getgenv().MissionFailsafeTime = Options.MissionFailsafeTimeSlider.Value
+end)
+
+SecurityGroup:AddLabel("Failsafe returns to lobby if a mission\nis not cleared before the timeout.")
 
 -- ==========================================
 -- UTILITY TAB : Boosted Maps
@@ -3744,7 +3760,7 @@ Toggles.AutoStartToggle:OnChanged(function()
 						pcall(function()
 							getRemote:InvokeServer("S_Missions", "Modify", modifier)
 						end)
-						task.wait(0.3)
+						task.wait(1)
 					end
 				end
 
@@ -3767,7 +3783,7 @@ Toggles.AutoStartToggle:OnChanged(function()
 									pcall(function()
 										getRemote:InvokeServer("S_Missions", "Modify", modifier)
 									end)
-									task.wait(0.3)
+									task.wait(1)
 								end
 							end
 						end
@@ -5409,21 +5425,16 @@ local function GetQuestContainer(pData)
 end
 
 local function ReadQuestPlayerData()
-	for _, args in ipairs({
-		{ "Functions", "Settings", "Get" },
-		{ "Data", "Copy" },
-		{ "S_Equipment", "Talents" },
-	}) do
-		local ok, result = pcall(function()
-			return getRemote:InvokeServer(unpack(args))
-		end)
-		if ok and type(GetQuestContainer(result)) == "table" then
+	for _ = 1, 4 do
+		local result = ReadActorPlayerData(true)
+		if type(GetQuestContainer(result)) == "table" then
 			lastPlayerData = result
 			lastPlayerDataTime = os.clock()
 			return result
 		end
+		task.wait(0.25)
 	end
-	return ReadActorPlayerData(true)
+	return nil
 end
 
 local function GetQuestAmount(quest)
@@ -5437,6 +5448,13 @@ local function CollectClaimableQuests(pData)
 	local candidates = {}
 	local seen = {}
 	if type(quests) ~= "table" then return candidates end
+	local allowedCategories = {
+		Main = true,
+		Side = true,
+		Spears = true,
+		Daily = true,
+		Weekly = true,
+	}
 
 	local function add(tag, category)
 		if type(tag) ~= "string" or type(category) ~= "string" then return end
@@ -5447,21 +5465,7 @@ local function CollectClaimableQuests(pData)
 	end
 
 	for category, entries in pairs(quests) do
-		if category == "Battlepass" and type(entries) == "table" then
-			for weekName, weekEntries in pairs(entries) do
-				if type(weekEntries) == "table" then
-					for _, quest in pairs(weekEntries) do
-						if type(quest) == "table" and quest.Rewarded == nil and quest.Tag then
-							local amount = tonumber(quest.Amount)
-							local current = tonumber(quest.Current) or 0
-							if amount and current >= amount then
-								add(quest.Tag, tostring(weekName))
-							end
-						end
-					end
-				end
-			end
-		elseif type(entries) == "table" then
+		if allowedCategories[tostring(category)] and type(entries) == "table" then
 			for _, quest in pairs(entries) do
 				if type(quest) == "table" and quest.Rewarded == nil and quest.Tag then
 					local amount = GetQuestAmount(quest)
