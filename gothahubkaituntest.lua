@@ -3468,10 +3468,19 @@ local function BuyAndUseBoostIfNeeded()
 	local cfg = getgenv().AutoBuyBoostGemsConfig or {}
 	local boostType = cfg.BoostType or "Gold"
 	local duration = cfg.Duration or "30M"
-	local data = ReadBoostPlayerData()
+	local data = nil
+	local expired = nil
 
 	if cfg.OnlyWhenExpired ~= false then
-		local expired = IsBoostExpired(data, boostType)
+		for _ = 1, 15 do
+			data = ReadBoostPlayerData()
+			expired = IsBoostExpired(data, boostType)
+			if expired ~= nil then
+				break
+			end
+			task.wait(2)
+		end
+
 		if expired == false then
 			return "active"
 		elseif expired == nil then
