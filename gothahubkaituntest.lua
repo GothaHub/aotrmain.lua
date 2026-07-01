@@ -128,8 +128,8 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     },
     AutoBuyBoostGems = {
         Enabled = true,
-        BoostType = "Luck", -- Gold, Luck, XP
-        Duration = "30M", -- 30M, 1H, 2H
+        BoostType = "Gold", -- Gold, Luck, XP
+        Duration = "2H", -- 30M, 1H, 2H
         OnlyWhenExpired = true,
     },
 
@@ -3543,14 +3543,9 @@ FeaturesGroup:AddDropdown("BoostSelectDropdown", {
 
 local boostBuyConfig = getgenv().AutoBuyBoostGemsConfig or {}
 
-FeaturesGroup:AddToggle("AutoBuyBoostGemsToggle", {
-	Text = "Auto Buy Boost Gems",
-	Default = false,
-	Tooltip = "Buys one selected boost with gems, then uses it."
-})
-Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
-	getgenv().AutoBuyBoostGems = Toggles.AutoBuyBoostGemsToggle.Value
-	if not getgenv().AutoBuyBoostGems then return end
+local function StartAutoBuyBoostGemsLoop()
+	if getgenv().AutoBuyBoostGemsRunning then return end
+	getgenv().AutoBuyBoostGems = true
 
 	task.spawn(function()
 		if getgenv().AutoBuyBoostGemsRunning then return end
@@ -3579,6 +3574,24 @@ Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
 
 		getgenv().AutoBuyBoostGemsRunning = false
 	end)
+end
+
+FeaturesGroup:AddToggle("AutoBuyBoostGemsToggle", {
+	Text = "Auto Buy Boost Gems",
+	Default = false,
+	Tooltip = "Buys one selected boost with gems, then uses it."
+})
+Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
+	getgenv().AutoBuyBoostGems = Toggles.AutoBuyBoostGemsToggle.Value
+	if not getgenv().AutoBuyBoostGems then return end
+	StartAutoBuyBoostGemsLoop()
+end)
+
+task.defer(function()
+	task.wait(1)
+	if AutoBuyBoostConfig.Enabled == true then
+		StartAutoBuyBoostGemsLoop()
+	end
 end)
 
 FeaturesGroup:AddDropdown("BuyBoostTypeDropdown", {
