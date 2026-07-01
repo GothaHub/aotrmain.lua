@@ -146,7 +146,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     AutoSellPerks = {
         Common = true,
         Rare = true,
-        Epic = false,
+        Epic = true,
         Legendary = false,
         Mythic = false,
     },
@@ -2072,32 +2072,10 @@ if getgenv().AutoRetry then
             end
             
             local function tryRetryRemote()
-                local calls = {
-                    { "S_Rewards", "Retry" },
-                    { "S_Rewards", "Replay" },
-                    { "S_Missions", "Retry" },
-                    { "S_Missions", "Replay" },
-                    { "Functions", "Retry" },
-                }
-
-                for _, args in ipairs(calls) do
-                    pcall(function()
-                        getRemote:InvokeServer(unpack(args))
-                    end)
-                    task.wait(0.25)
-                    if not rewardsGui.Visible then
-                        return true
-                    end
-                end
-
-                return false
-            end
-
-            local function startRetriedMission()
-                task.wait(1)
-                pcall(function()
-                    getRemote:InvokeServer("S_Missions", "Start")
+                local ok = pcall(function()
+                    getRemote:InvokeServer("Functions", "Retry", "Add")
                 end)
+                return ok
             end
 
             local function fallbackToLobbyIfStuck()
@@ -2164,7 +2142,6 @@ if getgenv().AutoRetry then
                     if rewardsGui.Visible then
                         tryRetryRemote()
                     end
-                    startRetriedMission()
                     fallbackToLobbyIfStuck()
                 else
                     getgenv()._autoRetryHandling = false
@@ -2173,7 +2150,6 @@ if getgenv().AutoRetry then
                 -- Button not found or not active, force refresh
                 print("Retry button not ready, waiting...")
                 tryRetryRemote()
-                startRetriedMission()
                 fallbackToLobbyIfStuck()
                 task.wait(0.5)
             end
