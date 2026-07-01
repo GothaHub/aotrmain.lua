@@ -3464,6 +3464,24 @@ local function BuyBoostWithGems(boostType, duration)
 	return false, result, info.Item
 end
 
+local BOOST_BUY_DEBUG_FILE = "GOTHAHUB/boost_buy_main_debug_output.txt"
+local function BoostBuyDebugLog(...)
+	local parts = { os.date("%H:%M:%S"), "--", "[Boost Buy Main]" }
+	for i = 1, select("#", ...) do
+		parts[#parts + 1] = tostring(select(i, ...))
+	end
+	local line = table.concat(parts, " ")
+	print(line)
+	pcall(function()
+		if type(isfolder) == "function" and not isfolder("GOTHAHUB") then
+			makefolder("GOTHAHUB")
+		end
+		if type(appendfile) == "function" then
+			appendfile(BOOST_BUY_DEBUG_FILE, line .. "\n")
+		end
+	end)
+end
+
 local function BuyAndUseBoostIfNeeded()
 	local cfg = getgenv().AutoBuyBoostGemsConfig or {}
 	local boostType = cfg.BoostType or "Gold"
@@ -3471,10 +3489,14 @@ local function BuyAndUseBoostIfNeeded()
 	local data = nil
 	local expired = nil
 
+	BoostBuyDebugLog("check", "place=", game.PlaceId, "boost=", boostType, "duration=", duration, "onlyExpired=", cfg.OnlyWhenExpired)
+
 	if cfg.OnlyWhenExpired ~= false then
 		for _ = 1, 15 do
 			data = ReadBoostPlayerData()
-			expired = IsBoostExpired(data, boostType)
+			local value = GetBoostExpiryValue(data, boostType)
+			expired = value == nil and nil or value <= 0
+			BoostBuyDebugLog("data_attempt", "value=", tostring(value), "expired=", tostring(expired), "dataType=", type(data))
 			if expired ~= nil then
 				break
 			end
@@ -3482,10 +3504,12 @@ local function BuyAndUseBoostIfNeeded()
 		end
 
 		if expired == false then
+			BoostBuyDebugLog("decision", "active")
 			return "active"
 		elseif expired == nil then
 			local uiActive = IsBoostActiveFromUi(boostType)
 			if uiActive == true then return "active_ui" end
+			BoostBuyDebugLog("decision", "data_failed", "uiActive=", tostring(uiActive))
 			return "data_failed"
 		end
 	end
@@ -3494,15 +3518,18 @@ local function BuyAndUseBoostIfNeeded()
 	if not info then return "invalid" end
 
 	local used = UseBoostItem(info.Item)
+	BoostBuyDebugLog("use_existing", info.Item, "used=", tostring(used))
 	if used then return "used" end
 
 	local bought, buyResult, itemName = BuyBoostWithGems(boostType, duration)
+	BoostBuyDebugLog("buy", "bought=", tostring(bought), "resultType=", type(buyResult), "result=", tostring(buyResult), "item=", tostring(itemName))
 	if not bought then
 		return type(buyResult) == "string" and buyResult or "buy_failed"
 	end
 
 	task.wait(0.35)
 	local usedAfterBuy = UseBoostItem(itemName)
+	BoostBuyDebugLog("use_after_buy", "used=", tostring(usedAfterBuy))
 	return usedAfterBuy and "bought_used" or "bought"
 end
 
@@ -3553,20 +3580,30 @@ FeaturesGroup:AddDropdown("BoostSelectDropdown", {
 local boostBuyConfig = getgenv().AutoBuyBoostGemsConfig or {}
 
 local function StartAutoBuyBoostGemsLoop()
-	if getgenv().AutoBuyBoostGemsRunning then return end
+	if getgenv().AutoBuyBoostGemsRunning then
+		BoostBuyDebugLog("loop_skip", "already_running")
+		return
+	end
 	getgenv().AutoBuyBoostGems = true
+	BoostBuyDebugLog("loop_start_requested")
 
 	task.spawn(function()
-		if getgenv().AutoBuyBoostGemsRunning then return end
+		if getgenv().AutoBuyBoostGemsRunning then
+			BoostBuyDebugLog("loop_spawn_skip", "already_running")
+			return
+		end
 		getgenv().AutoBuyBoostGemsRunning = true
+		BoostBuyDebugLog("loop_started")
 
 		while getgenv().AutoBuyBoostGems do
 			if game.PlaceId ~= 14916516914 then
+				BoostBuyDebugLog("not_lobby_wait", "place=", game.PlaceId)
 				task.wait(60)
 				continue
 			end
 
 			local status = BuyAndUseBoostIfNeeded()
+			BoostBuyDebugLog("status", tostring(status))
 			if status == "bought_used" then
 				Library:Notify({ Title = "Auto Buy Boost", Description = "Bought and used boost.", Time = 3 })
 				task.wait(60)
@@ -3582,6 +3619,7 @@ local function StartAutoBuyBoostGemsLoop()
 		end
 
 		getgenv().AutoBuyBoostGemsRunning = false
+		BoostBuyDebugLog("loop_stopped")
 	end)
 end
 
@@ -3598,6 +3636,7 @@ end)
 
 task.defer(function()
 	task.wait(1)
+	BoostBuyDebugLog("config_boot", "enabled=", tostring(AutoBuyBoostConfig.Enabled), "type=", tostring(AutoBuyBoostConfig.BoostType), "duration=", tostring(AutoBuyBoostConfig.Duration), "onlyExpired=", tostring(AutoBuyBoostConfig.OnlyWhenExpired))
 	if AutoBuyBoostConfig.Enabled == true then
 		StartAutoBuyBoostGemsLoop()
 	end
