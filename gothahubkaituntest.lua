@@ -128,8 +128,8 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     },
     AutoBuyBoostGems = {
         Enabled = true,
-        BoostType = "Gold", -- Gold, Luck, XP
-        Duration = "2H", -- 30M, 1H, 2H
+        BoostType = "Luck", -- Gold, Luck, XP
+        Duration = "30M", -- 30M, 1H, 2H
         OnlyWhenExpired = true,
     },
 
@@ -3558,10 +3558,8 @@ Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
 
 		while getgenv().AutoBuyBoostGems do
 			if game.PlaceId ~= 14916516914 then
-				Library:Notify({ Title = "Auto Buy Boost", Description = "Works in lobby!", Time = 3 })
-				getgenv().AutoBuyBoostGems = false
-				Toggles.AutoBuyBoostGemsToggle:SetValue(false)
-				break
+				task.wait(60)
+				continue
 			end
 
 			local status = BuyAndUseBoostIfNeeded()
