@@ -146,7 +146,7 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     AutoSellPerks = {
         Common = true,
         Rare = true,
-        Epic = true,
+        Epic = false,
         Legendary = false,
         Mythic = false,
     },
