@@ -128,8 +128,8 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     },
     AutoBuyBoostGems = {
         Enabled = true,
-        BoostType = "Gold", -- Gold, Luck, XP
-        Duration = "2H", -- 30M, 1H, 2H
+        BoostType = "XP", -- Gold, Luck, XP
+        Duration = "30M", -- 30M, 1H, 2H
         OnlyWhenExpired = true,
     },
 
@@ -5857,17 +5857,18 @@ end)
 -- STATS TAB
 -- ==========================================
 
-local labelSessionTime = SessionGroup:AddLabel("Session Time: 00:00:00")
-local labelGames       = SessionGroup:AddLabel("Games Played: 0")
-local labelGold        = SessionGroup:AddLabel("Total Gold: 0")
-local labelGems        = SessionGroup:AddLabel("Total Gems: 0")
-local labelXP          = SessionGroup:AddLabel("Total XP: 0")
-local labelMythicals   = SessionGroup:AddLabel("Mythical Drops: 0")
-local labelCrashes     = SessionGroup:AddLabel("Crashes Detected: 0")
+getgenv().GothaStatsLabels = getgenv().GothaStatsLabels or {}
+getgenv().GothaStatsLabels.SessionTime = SessionGroup:AddLabel("Session Time: 00:00:00")
+getgenv().GothaStatsLabels.Games       = SessionGroup:AddLabel("Games Played: 0")
+getgenv().GothaStatsLabels.Gold        = SessionGroup:AddLabel("Total Gold: 0")
+getgenv().GothaStatsLabels.Gems        = SessionGroup:AddLabel("Total Gems: 0")
+getgenv().GothaStatsLabels.XP          = SessionGroup:AddLabel("Total XP: 0")
+getgenv().GothaStatsLabels.Mythicals   = SessionGroup:AddLabel("Mythical Drops: 0")
+getgenv().GothaStatsLabels.Crashes     = SessionGroup:AddLabel("Crashes Detected: 0")
 
-local labelGoldHour  = RatesGroup:AddLabel("Gold / Hour: 0")
-local labelGamesHour = RatesGroup:AddLabel("Games / Hour: 0")
-local labelAvgGold   = RatesGroup:AddLabel("Avg Gold / Game: 0")
+getgenv().GothaStatsLabels.GoldHour  = RatesGroup:AddLabel("Gold / Hour: 0")
+getgenv().GothaStatsLabels.GamesHour = RatesGroup:AddLabel("Games / Hour: 0")
+getgenv().GothaStatsLabels.AvgGold   = RatesGroup:AddLabel("Avg Gold / Game: 0")
 
 SessionGroup:AddButton({
 	Text = "Reset Session",
@@ -5905,18 +5906,18 @@ CrashGroup:AddLabel("Detects stuck/crashed missions\nand auto returns to lobby")
 task.spawn(function()
 	while not Library.Unloaded do
 		pcall(function()
-			labelSessionTime:SetText("Session Time: "  .. getSessionTime())
-			labelGames:SetText("Games Played: "        .. sessionStats.gamesPlayed)
-			labelGold:SetText("Total Gold: "           .. sessionStats.totalGold)
-			labelGems:SetText("Total Gems: "           .. sessionStats.totalGems)
-			labelXP:SetText("Total XP: "               .. sessionStats.totalXP)
-			labelMythicals:SetText("Mythical Drops: "  .. sessionStats.mythicalDrops)
-			labelCrashes:SetText("Crashes Detected: "  .. sessionStats.crashes)
-			labelGoldHour:SetText("Gold / Hour: "      .. getGoldPerHour())
-			labelGamesHour:SetText("Games / Hour: "    .. getGamesPerHour())
+			getgenv().GothaStatsLabels.SessionTime:SetText("Session Time: "  .. getSessionTime())
+			getgenv().GothaStatsLabels.Games:SetText("Games Played: "        .. sessionStats.gamesPlayed)
+			getgenv().GothaStatsLabels.Gold:SetText("Total Gold: "           .. sessionStats.totalGold)
+			getgenv().GothaStatsLabels.Gems:SetText("Total Gems: "           .. sessionStats.totalGems)
+			getgenv().GothaStatsLabels.XP:SetText("Total XP: "               .. sessionStats.totalXP)
+			getgenv().GothaStatsLabels.Mythicals:SetText("Mythical Drops: "  .. sessionStats.mythicalDrops)
+			getgenv().GothaStatsLabels.Crashes:SetText("Crashes Detected: "  .. sessionStats.crashes)
+			getgenv().GothaStatsLabels.GoldHour:SetText("Gold / Hour: "      .. getGoldPerHour())
+			getgenv().GothaStatsLabels.GamesHour:SetText("Games / Hour: "    .. getGamesPerHour())
 			local avgGold = sessionStats.gamesPlayed > 0
 				and math.floor(sessionStats.totalGold / sessionStats.gamesPlayed) or 0
-			labelAvgGold:SetText("Avg Gold / Game: "   .. avgGold)
+			getgenv().GothaStatsLabels.AvgGold:SetText("Avg Gold / Game: "   .. avgGold)
 		end)
 		task.wait(1)
 	end
@@ -5963,10 +5964,9 @@ task.spawn(function()
 end)
 
 -- Anti-AFK
-local virtualUser = game:GetService("VirtualUser")
 lp.Idled:Connect(function()
-	virtualUser:CaptureController()
-	virtualUser:ClickButton2(Vector2.new())
+	game:GetService("VirtualUser"):CaptureController()
+	game:GetService("VirtualUser"):ClickButton2(Vector2.new())
 end)
 
 -- Auto Hide Logic
