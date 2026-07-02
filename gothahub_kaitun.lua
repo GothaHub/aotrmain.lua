@@ -11,10 +11,10 @@ getgenv().GothaKaitunConfig = getgenv().GothaKaitunConfig or {
     MoveSpeed = 400, -- number
     HeightSafe = 155, -- number
     AttackRange = 100, -- number
-    MultiHit = true, -- true/false
-    MultiHitCount = 2, -- number
+    MultiHit = false, -- true/false
+    MultiHitCount = 1, -- number
     LastTitanWait = true, -- true/false
-    LastTitanWaitSecs = 45, -- seconds
+    LastTitanWaitSecs = 70, -- seconds
 
     -- Safety / movement
     SoloOnly = true, -- true/false
