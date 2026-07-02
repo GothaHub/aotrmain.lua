@@ -3390,22 +3390,152 @@ local BoostMarketItems = {
 	},
 }
 
+local BoostDurationSeconds = {
+	["30M"] = 30 * 60,
+	["1H"] = 60 * 60,
+	["2H"] = 2 * 60 * 60,
+}
+
 local function ReadBoostPlayerData()
-	for _ = 1, 4 do
-		local data = ReadActorPlayerData(true)
-		if type(data) == "table" then
-			return data
-		end
-		task.wait(0.25)
+	if type(getactors) ~= "function" or type(run_on_actor) ~= "function" then
+		return ReadActorPlayerData(true)
 	end
 
-	return nil
+	local slotId = tostring(lp:GetAttribute("Slot") or getgenv().AutoSlot or "A")
+	local bridgeName = "GothaBoostDataBridge_" .. tostring(math.random(100000, 999999))
+	local bridge = Instance.new("Folder")
+	bridge.Name = bridgeName
+	bridge.Parent = ReplicatedStorage
+
+	local done = Instance.new("BoolValue")
+	done.Name = "Done"
+	done.Parent = bridge
+	local success = Instance.new("BoolValue")
+	success.Name = "Success"
+	success.Parent = bridge
+	local dataJson = Instance.new("StringValue")
+	dataJson.Name = "DataJson"
+	dataJson.Parent = bridge
+
+	local actorCode =
+		"local SLOT = " .. string.format("%q", slotId) .. "\n" ..
+		"local BRIDGE_NAME = " .. string.format("%q", bridgeName) .. "\n" ..
+	[[
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local bridge = ReplicatedStorage:FindFirstChild(BRIDGE_NAME)
+if not bridge then return end
+
+local function finish(ok, payload)
+	local dataJson = bridge:FindFirstChild("DataJson")
+	local success = bridge:FindFirstChild("Success")
+	local done = bridge:FindFirstChild("Done")
+	if dataJson then dataJson.Value = payload or "" end
+	if success then success.Value = ok == true end
+	if done then done.Value = true end
+end
+
+local function copyFlat(t)
+	local out = {}
+	if type(t) ~= "table" then return out end
+	for k, v in pairs(t) do
+		if (type(k) == "string" or type(k) == "number") and (type(v) == "string" or type(v) == "number" or type(v) == "boolean") then
+			out[k] = v
+		end
+	end
+	return out
+end
+
+local function findSlot(data)
+	if type(data) ~= "table" then return nil end
+	local slots = data.Slots
+	if type(slots) ~= "table" and type(data.Data) == "table" then
+		slots = data.Data.Slots
+	end
+	if type(slots) ~= "table" then return nil end
+	return slots[SLOT] or slots[tostring(SLOT)] or slots.A
+end
+
+local best, bestScore = nil, -1
+if type(getgc) == "function" then
+	for _, obj in ipairs(getgc(true)) do
+		if type(obj) == "table" then
+			local root = obj
+			if type(obj.Cache) == "table" then
+				root = obj.Cache.Data or obj.Cache
+			end
+			if type(root) == "table" then
+				local slot = findSlot(root)
+				local score = 0
+				if type(root.Boosts) == "table" then score += 25 end
+				if type(root.Currency) == "table" then score += 5 end
+				if type(root.Slots) == "table" then score += 5 end
+				if type(slot) == "table" then
+					score += 5
+					if type(slot.Boosts) == "table" then score += 15 end
+					if type(slot.Currency) == "table" then score += 5 end
+				end
+				if score > bestScore and score > 0 then
+					bestScore = score
+					best = {
+						RootBoosts = copyFlat(root.Boosts),
+						SlotBoosts = type(slot) == "table" and copyFlat(slot.Boosts) or {},
+						Score = score,
+					}
+				end
+			end
+		end
+	end
+end
+
+if not best then
+	finish(false, "")
+	return
+end
+finish(true, HttpService:JSONEncode(best))
+]]
+
+	local okActors, actors = pcall(getactors)
+	if okActors and type(actors) == "table" then
+		for _, actor in ipairs(actors) do
+			pcall(function()
+				run_on_actor(actor, actorCode)
+			end)
+		end
+	end
+
+	local started = os.clock()
+	while not done.Value and os.clock() - started < 5 do
+		task.wait(0.05)
+	end
+
+	local data = nil
+	if success.Value and dataJson.Value ~= "" then
+		local okDecode, decoded = pcall(HttpService.JSONDecode, HttpService, dataJson.Value)
+		if okDecode and type(decoded) == "table" then
+			data = decoded
+		end
+	end
+	pcall(function() bridge:Destroy() end)
+	return data or ReadActorPlayerData(true)
 end
 
 local function GetBoostExpiryValue(data, boostType)
 	if type(data) ~= "table" then return nil end
 
-	local boosts = type(data.Boosts) == "table" and data.Boosts or nil
+	local boosts = type(data.RootBoosts) == "table" and data.RootBoosts or nil
+	if type(boosts) == "table" then
+		local value = boosts[boostType] or boosts[boostType .. " Boost"]
+		if value ~= nil then return tonumber(value) end
+	end
+
+	boosts = type(data.SlotBoosts) == "table" and data.SlotBoosts or nil
+	if type(boosts) == "table" then
+		local value = boosts[boostType] or boosts[boostType .. " Boost"]
+		if value ~= nil then return tonumber(value) end
+	end
+
+	boosts = type(data.Boosts) == "table" and data.Boosts or nil
 	if not boosts then
 		local slot = GetSlotDataFromPlayerData(data)
 		boosts = type(slot) == "table" and type(slot.Boosts) == "table" and slot.Boosts or nil
@@ -3464,19 +3594,49 @@ local function BuyBoostWithGems(boostType, duration)
 	return false, result, info.Item
 end
 
+local function BoostBuyDebugLog(...)
+end
+
 local function BuyAndUseBoostIfNeeded()
 	local cfg = getgenv().AutoBuyBoostGemsConfig or {}
 	local boostType = cfg.BoostType or "Gold"
 	local duration = cfg.Duration or "30M"
-	local data = ReadBoostPlayerData()
+	local data = nil
+	local expired = nil
+	local cooldownKey = boostType .. ":" .. duration
+	getgenv().GothaBoostBuyCooldowns = getgenv().GothaBoostBuyCooldowns or {}
+	local cooldownUntil = tonumber(getgenv().GothaBoostBuyCooldowns[cooldownKey])
+
+	BoostBuyDebugLog("check", "place=", game.PlaceId, "boost=", boostType, "duration=", duration, "onlyExpired=", cfg.OnlyWhenExpired)
+
+	if cooldownUntil and os.time() < cooldownUntil then
+		BoostBuyDebugLog("decision", "cooldown", "left=", tostring(cooldownUntil - os.time()), "key=", cooldownKey)
+		return "cooldown"
+	end
 
 	if cfg.OnlyWhenExpired ~= false then
-		local expired = IsBoostExpired(data, boostType)
+		for _ = 1, 15 do
+			data = ReadBoostPlayerData()
+			local value = GetBoostExpiryValue(data, boostType)
+			if value == nil then
+				expired = nil
+			else
+				expired = value <= 0
+			end
+			BoostBuyDebugLog("data_attempt", "value=", tostring(value), "expired=", tostring(expired), "dataType=", type(data))
+			if expired ~= nil then
+				break
+			end
+			task.wait(2)
+		end
+
 		if expired == false then
+			BoostBuyDebugLog("decision", "active")
 			return "active"
 		elseif expired == nil then
 			local uiActive = IsBoostActiveFromUi(boostType)
 			if uiActive == true then return "active_ui" end
+			BoostBuyDebugLog("decision", "data_failed", "uiActive=", tostring(uiActive))
 			return "data_failed"
 		end
 	end
@@ -3484,16 +3644,32 @@ local function BuyAndUseBoostIfNeeded()
 	local info = BoostMarketItems[boostType] and BoostMarketItems[boostType][duration]
 	if not info then return "invalid" end
 
+	if cfg.OnlyWhenExpired ~= false and IsBoostActiveFromUi(boostType) == true then
+		BoostBuyDebugLog("decision", "active_ui_before_buy")
+		return "active_ui"
+	end
+
 	local used = UseBoostItem(info.Item)
-	if used then return "used" end
+	BoostBuyDebugLog("use_existing", info.Item, "used=", tostring(used))
+	if used then
+		getgenv().GothaBoostBuyCooldowns[cooldownKey] = os.time() + (BoostDurationSeconds[duration] or 1800)
+		BoostBuyDebugLog("cooldown_set", "seconds=", tostring(BoostDurationSeconds[duration] or 1800), "key=", cooldownKey)
+		return "used"
+	end
 
 	local bought, buyResult, itemName = BuyBoostWithGems(boostType, duration)
+	BoostBuyDebugLog("buy", "bought=", tostring(bought), "resultType=", type(buyResult), "result=", tostring(buyResult), "item=", tostring(itemName))
 	if not bought then
 		return type(buyResult) == "string" and buyResult or "buy_failed"
 	end
 
 	task.wait(0.35)
 	local usedAfterBuy = UseBoostItem(itemName)
+	BoostBuyDebugLog("use_after_buy", "used=", tostring(usedAfterBuy))
+	if usedAfterBuy then
+		getgenv().GothaBoostBuyCooldowns[cooldownKey] = os.time() + (BoostDurationSeconds[duration] or 1800)
+		BoostBuyDebugLog("cooldown_set", "seconds=", tostring(BoostDurationSeconds[duration] or 1800), "key=", cooldownKey)
+	end
 	return usedAfterBuy and "bought_used" or "bought"
 end
 
@@ -3543,35 +3719,38 @@ FeaturesGroup:AddDropdown("BoostSelectDropdown", {
 
 local boostBuyConfig = getgenv().AutoBuyBoostGemsConfig or {}
 
-FeaturesGroup:AddToggle("AutoBuyBoostGemsToggle", {
-	Text = "Auto Buy Boost Gems",
-	Default = false,
-	Tooltip = "Buys one selected boost with gems, then uses it."
-})
-Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
-	getgenv().AutoBuyBoostGems = Toggles.AutoBuyBoostGemsToggle.Value
-	if not getgenv().AutoBuyBoostGems then return end
+local function StartAutoBuyBoostGemsLoop()
+	if getgenv().AutoBuyBoostGemsRunning then
+		BoostBuyDebugLog("loop_skip", "already_running")
+		return
+	end
+	getgenv().AutoBuyBoostGems = true
+	BoostBuyDebugLog("loop_start_requested")
 
 	task.spawn(function()
-		if getgenv().AutoBuyBoostGemsRunning then return end
+		if getgenv().AutoBuyBoostGemsRunning then
+			BoostBuyDebugLog("loop_spawn_skip", "already_running")
+			return
+		end
 		getgenv().AutoBuyBoostGemsRunning = true
+		BoostBuyDebugLog("loop_started")
 
 		while getgenv().AutoBuyBoostGems do
 			if game.PlaceId ~= 14916516914 then
-				Library:Notify({ Title = "Auto Buy Boost", Description = "Works in lobby!", Time = 3 })
-				getgenv().AutoBuyBoostGems = false
-				Toggles.AutoBuyBoostGemsToggle:SetValue(false)
-				break
+				BoostBuyDebugLog("not_lobby_wait", "place=", game.PlaceId)
+				task.wait(60)
+				continue
 			end
 
 			local status = BuyAndUseBoostIfNeeded()
+			BoostBuyDebugLog("status", tostring(status))
 			if status == "bought_used" then
 				Library:Notify({ Title = "Auto Buy Boost", Description = "Bought and used boost.", Time = 3 })
 				task.wait(60)
 			elseif status == "used" then
 				Library:Notify({ Title = "Auto Buy Boost", Description = "Used boost from inventory.", Time = 3 })
 				task.wait(60)
-			elseif status == "active" or status == "active_ui" then
+			elseif status == "active" or status == "active_ui" or status == "cooldown" then
 				task.wait(60)
 			else
 				Library:Notify({ Title = "Auto Buy Boost", Description = tostring(status), Time = 3 })
@@ -3580,7 +3759,27 @@ Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
 		end
 
 		getgenv().AutoBuyBoostGemsRunning = false
+		BoostBuyDebugLog("loop_stopped")
 	end)
+end
+
+FeaturesGroup:AddToggle("AutoBuyBoostGemsToggle", {
+	Text = "Auto Buy Boost Gems",
+	Default = false,
+	Tooltip = "Buys one selected boost with gems, then uses it."
+})
+Toggles.AutoBuyBoostGemsToggle:OnChanged(function()
+	getgenv().AutoBuyBoostGems = Toggles.AutoBuyBoostGemsToggle.Value
+	if not getgenv().AutoBuyBoostGems then return end
+	StartAutoBuyBoostGemsLoop()
+end)
+
+task.defer(function()
+	task.wait(1)
+	BoostBuyDebugLog("config_boot", "enabled=", tostring(AutoBuyBoostConfig.Enabled), "type=", tostring(AutoBuyBoostConfig.BoostType), "duration=", tostring(AutoBuyBoostConfig.Duration), "onlyExpired=", tostring(AutoBuyBoostConfig.OnlyWhenExpired))
+	if AutoBuyBoostConfig.Enabled == true then
+		StartAutoBuyBoostGemsLoop()
+	end
 end)
 
 FeaturesGroup:AddDropdown("BuyBoostTypeDropdown", {
